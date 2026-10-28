@@ -37,9 +37,18 @@ internal sealed class HealthCheckService(
     private static readonly TimeSpan HeartbeatStaleAfter = TimeSpan.FromHours(3);
     private static readonly TimeSpan NetworkTimeout = TimeSpan.FromSeconds(15);
 
-    public async Task<IReadOnlyList<HealthCheckResult>> RunAsync(
+    public Task<IReadOnlyList<HealthCheckResult>> RunAsync(
         IProgress<ProgressEvent>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        RunCoreAsync(full: true, progress, cancellationToken);
+
+    public Task<IReadOnlyList<HealthCheckResult>> RunQuickAsync(CancellationToken cancellationToken = default) =>
+        RunCoreAsync(full: false, progress: null, cancellationToken);
+
+    private async Task<IReadOnlyList<HealthCheckResult>> RunCoreAsync(
+        bool full,
+        IProgress<ProgressEvent>? progress,
+        CancellationToken cancellationToken)
     {
         var results = new List<HealthCheckResult>();
 
@@ -61,7 +70,11 @@ internal sealed class HealthCheckService(
             }
         }
 
-        await Check("Administrator", () => Task.FromResult(CheckElevation())).ConfigureAwait(false);
+        if (full)
+        {
+            await Check("Administrator", () => Task.FromResult(CheckElevation())).ConfigureAwait(false);
+        }
+
         await Check("Data folder permissions", () => Task.FromResult(CheckPermissions())).ConfigureAwait(false);
 
         AppConfig? config = null;
@@ -82,59 +95,63 @@ internal sealed class HealthCheckService(
         await Check("Renewal service", () => CheckServiceAsync(certificates.Count, cancellationToken)).ConfigureAwait(false);
         await Check("Service heartbeat", () => CheckHeartbeatAsync(cancellationToken)).ConfigureAwait(false);
 
-        IReadOnlyList<IisSite> sites = [];
-        await Check("IIS", async () =>
+        // IIS, per-certificate, DNS, port 80, and network checks are slower and run only in the full check.
+        if (full)
         {
-            sites = await iisService.GetSitesAsync(cancellationToken).ConfigureAwait(false);
-            return Pass("IIS", $"IIS configuration is readable ({sites.Count} site(s)).");
-        }).ConfigureAwait(false);
-
-        foreach (var certificate in certificates)
-        {
-            var site = certificate.SiteName;
-            await Check($"Certificate installed: {site}", () => CheckInstalledAsync(certificate, cancellationToken))
-                .ConfigureAwait(false);
-            await Check($"HTTPS bindings: {site}", () => Task.FromResult(CheckBindings(certificate, sites)))
-                .ConfigureAwait(false);
-            await Check($"Expiry: {site}", () => Task.FromResult(CheckExpiry(certificate))).ConfigureAwait(false);
-            await Check($"Renewal history: {site}", () => Task.FromResult(CheckRenewalHistory(certificate)))
-                .ConfigureAwait(false);
-            foreach (var host in certificate.Hosts)
+            IReadOnlyList<IisSite> sites = [];
+            await Check("IIS", async () =>
             {
-                await Check($"DNS: {host}", () => CheckDnsAsync(host, cancellationToken)).ConfigureAwait(false);
-            }
+                sites = await iisService.GetSitesAsync(cancellationToken).ConfigureAwait(false);
+                return Pass("IIS", $"IIS configuration is readable ({sites.Count} site(s)).");
+            }).ConfigureAwait(false);
 
-            // Port 80 reachability and challenge-folder access, exactly as checked before issuance.
-            progress?.Report(new ProgressEvent("health", $"Running pre-flight checks for {site}."));
-            try
+            foreach (var certificate in certificates)
             {
-                var checks = await preflightService.CheckAsync(site, certificate.Hosts, cancellationToken)
+                var site = certificate.SiteName;
+                await Check($"Certificate installed: {site}", () => CheckInstalledAsync(certificate, cancellationToken))
                     .ConfigureAwait(false);
-                results.AddRange(checks
-                    .Where(check => check.Name != "Administrator")
-                    .Select(check => new HealthCheckResult(
-                        $"{check.Name} ({site})",
-                        check.Succeeded ? HealthStatus.Pass : HealthStatus.Fail,
-                        check.Message)));
+                await Check($"HTTPS bindings: {site}", () => Task.FromResult(CheckBindings(certificate, sites)))
+                    .ConfigureAwait(false);
+                await Check($"Expiry: {site}", () => Task.FromResult(CheckExpiry(certificate))).ConfigureAwait(false);
+                await Check($"Renewal history: {site}", () => Task.FromResult(CheckRenewalHistory(certificate)))
+                    .ConfigureAwait(false);
+                foreach (var host in certificate.Hosts)
+                {
+                    await Check($"DNS: {host}", () => CheckDnsAsync(host, cancellationToken)).ConfigureAwait(false);
+                }
+
+                // Port 80 reachability and challenge-folder access, exactly as checked before issuance.
+                progress?.Report(new ProgressEvent("health", $"Running pre-flight checks for {site}."));
+                try
+                {
+                    var checks = await preflightService.CheckAsync(site, certificate.Hosts, cancellationToken)
+                        .ConfigureAwait(false);
+                    results.AddRange(checks
+                        .Where(check => check.Name != "Administrator")
+                        .Select(check => new HealthCheckResult(
+                            $"{check.Name} ({site})",
+                            check.Succeeded ? HealthStatus.Pass : HealthStatus.Fail,
+                            check.Message)));
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    results.Add(new HealthCheckResult($"Pre-flight ({site})", HealthStatus.Fail, exception.Message));
+                }
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+
+            var environments = certificates.Select(value => value.Environment).Distinct().ToList();
+            if (environments.Count == 0)
             {
-                results.Add(new HealthCheckResult($"Pre-flight ({site})", HealthStatus.Fail, exception.Message));
+                environments.Add(AcmeEnvironment.Staging);
             }
-        }
 
-        var environments = certificates.Select(value => value.Environment).Distinct().ToList();
-        if (environments.Count == 0)
-        {
-            environments.Add(AcmeEnvironment.Staging);
-        }
-
-        foreach (var environment in environments)
-        {
-            await Check(
-                    $"Let's Encrypt {environment.DisplayName()}",
-                    () => CheckAcmeAsync(environment, cancellationToken))
-                .ConfigureAwait(false);
+            foreach (var environment in environments)
+            {
+                await Check(
+                        $"Let's Encrypt {environment.DisplayName()}",
+                        () => CheckAcmeAsync(environment, cancellationToken))
+                    .ConfigureAwait(false);
+            }
         }
 
         await Check("Notifications", () => Task.FromResult(CheckNotifications(config))).ConfigureAwait(false);

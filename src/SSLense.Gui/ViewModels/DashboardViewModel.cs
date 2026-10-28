@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using SSLense.Core;
+using SSLense.Core.Diagnostics;
 using SSLense.Core.Renewal;
 
 namespace SSLense.Gui.ViewModels;
@@ -10,6 +11,7 @@ namespace SSLense.Gui.ViewModels;
 public partial class DashboardViewModel : ObservableObject
 {
     private readonly IRenewalService _renewalService;
+    private readonly IHealthCheckService _healthCheckService;
     private readonly ILogger<DashboardViewModel> _logger;
     private readonly INavigationService _navigation;
     private readonly AsyncRelayCommand _refreshCommand;
@@ -29,12 +31,21 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private string? errorMessage;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasHealthAlert))]
+    private string? healthAlertTitle;
+
+    [ObservableProperty]
+    private string? healthAlertDetails;
+
     public DashboardViewModel(
         IRenewalService renewalService,
+        IHealthCheckService healthCheckService,
         ILogger<DashboardViewModel> logger,
         INavigationService navigation)
     {
         _renewalService = renewalService;
+        _healthCheckService = healthCheckService;
         _logger = logger;
         _navigation = navigation;
         _refreshCommand = new AsyncRelayCommand(RefreshAsync, CanRun);
@@ -42,6 +53,7 @@ public partial class DashboardViewModel : ObservableObject
         _renewAllCommand = new AsyncRelayCommand(RenewAllAsync, CanRenewAll);
         _cancelCommand = new RelayCommand(Cancel, CanCancel);
         IssueNewCommand = new RelayCommand(() => _navigation.Navigate("Issue"), () => !IsBusy);
+        OpenHealthCommand = new RelayCommand(() => _navigation.Navigate("Health"));
         ViewDetailsCommand = new RelayCommand(
             () => _navigation.Navigate("Details", SelectedCertificate?.SiteName),
             CanRenewSelected);
@@ -67,6 +79,9 @@ public partial class DashboardViewModel : ObservableObject
 
     public IRelayCommand CancelCommand => _cancelCommand;
     public IRelayCommand IssueNewCommand { get; }
+    public IRelayCommand OpenHealthCommand { get; }
+
+    public bool HasHealthAlert => HealthAlertTitle is not null;
     public IRelayCommand ViewDetailsCommand { get; }
 
     public Task InitializeAsync() => _refreshCommand.ExecuteAsync(null);
@@ -172,6 +187,32 @@ public partial class DashboardViewModel : ObservableObject
         OnPropertyChanged(nameof(AttentionCount));
         OnPropertyChanged(nameof(FailedCount));
         _renewAllCommand.NotifyCanExecuteChanged();
+        await UpdateHealthAlertAsync(cancellationToken).ConfigureAwait(true);
+    }
+
+    private async Task UpdateHealthAlertAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var problems = (await _healthCheckService.RunQuickAsync(cancellationToken).ConfigureAwait(true))
+                .Where(result => result.Status != HealthStatus.Pass)
+                .OrderByDescending(result => result.Status)
+                .ToArray();
+            HealthAlertDetails = problems.Length == 0
+                ? null
+                : string.Join(" ", problems.Take(2).Select(result => $"{result.Name}: {result.Message}")) +
+                  (problems.Length > 2 ? $" (+{problems.Length - 2} more)" : string.Empty);
+            HealthAlertTitle = problems.Length == 0
+                ? null
+                : problems[0].Status == HealthStatus.Fail
+                    ? $"{problems.Length} health problem(s) need attention"
+                    : $"{problems.Length} health warning(s)";
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // The banner is advisory; the certificate list above has already loaded.
+            _logger.LogWarning(exception, "Quick health check failed");
+        }
     }
 
     private IProgress<ProgressEvent> CreateProgress() =>

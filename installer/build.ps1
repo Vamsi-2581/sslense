@@ -46,10 +46,18 @@ foreach ($folder in $apps.Keys) {
     }
 }
 
+# The installer's license dialog needs RTF. Generate it from LICENSE so the two can never drift apart.
+$licenseRtf = Join-Path $root "artifacts\obj\License.rtf"
+New-Item -ItemType Directory -Force (Split-Path $licenseRtf) | Out-Null
+$escaped = (Get-Content (Join-Path $root "LICENSE") -Raw) -replace '\\', '\\' -replace '\{', '\{' -replace '\}', '\}'
+$body = ($escaped -split "\r?\n") -join "\par`r`n"
+Set-Content -Path $licenseRtf -Encoding ascii -Value "{\rtf1\ansi\deff0{\fonttbl{\f0\fmodern Consolas;}}\f0\fs16 $body}"
+
 $buildArguments = @(
     (Join-Path $PSScriptRoot "SSLense.Installer\SSLense.Installer.wixproj"),
     "-c", $Configuration,
     "-p:PublishDir=$publishRoot\",
+    "-p:LicenseRtf=$licenseRtf",
     "-o", $installerOutput,
     "-nologo"
 )

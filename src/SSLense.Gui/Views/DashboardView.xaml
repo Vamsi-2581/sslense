@@ -40,16 +40,30 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="2" Style="{StaticResource InfoBanner}" Margin="0,0,0,14">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="Cancel operation" Command="{Binding CancelCommand}" Style="{StaticResource LinkButton}" />
-                <TextBlock DockPanel.Dock="Left" Text="●" Foreground="{StaticResource BrandBrush}" FontSize="10" Margin="0,0,9,0" VerticalAlignment="Center" />
-                <StackPanel>
-                    <TextBlock Text="{Binding Activity}" Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                </StackPanel>
-            </DockPanel>
-        </Border>
+        <StackPanel Grid.Row="2">
+            <!-- Shown only when the quick health check finds something; the Health page has the full check. -->
+            <Border Style="{StaticResource Card}" Background="{StaticResource WarningSoftBrush}" BorderBrush="{StaticResource WarningBrush}"
+                    Margin="0,0,0,10" Visibility="{Binding HasHealthAlert, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    AutomationProperties.Name="Health alert">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Open Health" Command="{Binding OpenHealthCommand}" VerticalAlignment="Center" />
+                    <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="{Binding HealthAlertTitle}" Foreground="{StaticResource WarningBrush}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding HealthAlertDetails}" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" Margin="0,3,0,0" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+            <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,14">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Cancel operation" Command="{Binding CancelCommand}" Style="{StaticResource LinkButton}" />
+                    <TextBlock DockPanel.Dock="Left" Text="●" Foreground="{StaticResource BrandBrush}" FontSize="10" Margin="0,0,9,0" VerticalAlignment="Center" />
+                    <StackPanel>
+                        <TextBlock Text="{Binding Activity}" Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </StackPanel>
 
         <Border Grid.Row="3" Style="{StaticResource Card}" Padding="0">
             <Grid>

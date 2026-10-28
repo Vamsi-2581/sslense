@@ -54,7 +54,7 @@ msiexec /i SSLense-0.9.0-x64.msi /qn START_SERVICE=0  # silent, service installe
 msiexec /x SSLense-0.9.0-x64.msi /qn                  # silent uninstall
 ```
 
-The MSI installs to `C:\Program Files\SSLense` (`gui`, `cli`, and `service` folders), registers and starts the `SSLense` renewal service as LocalSystem with restart-on-failure actions, adds a Start menu shortcut and an Add/Remove Programs entry, adds the CLI folder to the system `PATH`, and restricts `C:\ProgramData\SSLense`. Upgrades stop the service, replace the files, and start it again. A failed installation or upgrade is rolled back by Windows Installer.
+An interactive install shows the Apache-2.0 license, which must be accepted before **Install** is enabled; silent installs skip all dialogs. The MSI installs to `C:\Program Files\SSLense` (`gui`, `cli`, and `service` folders), registers and starts the `SSLense` renewal service as LocalSystem with restart-on-failure actions, adds a Start menu shortcut and an Add/Remove Programs entry, adds the CLI folder to the system `PATH`, and restricts `C:\ProgramData\SSLense`. Upgrades stop the service, replace the files, and start it again. A failed installation or upgrade is rolled back by Windows Installer.
 
 Uninstalling removes the program and the service but **keeps** `C:\ProgramData\SSLense` (certificates, accounts, and settings) and leaves existing IIS bindings and certificates in place, so sites keep working. Delete that folder manually to remove all SSLense data.
 
@@ -237,6 +237,8 @@ SSLense stores files under `C:\ProgramData\SSLense`:
 - `certificates\`: saved public certificate PEM files; transient PFX data is not retained
 - `locks\`: per-site cross-process operation locks shared by the GUI, CLI, and service
 - `transactions\`: durable certificate-operation journals, normally removed automatically after commit or recovery
+- `challenges\`: records of HTTP-01 challenge files written into a site, so files left by an interrupted validation are removed at the next start (only once the process that wrote them has exited)
+- `service-heartbeat.json`: when the renewal service last started and completed a cycle, used by the health check
 - `logs\sslense-YYYYMMDD.log`: rolling logs retained for 30 days
 
 `config.json`, `managed-certificates.json`, and transaction journals carry a `schemaVersion`. Before SSLense first rewrites a file from an older schema, it saves the original as `<file>.v<old version>.bak` (for example `managed-certificates.json.v0.bak`). A file written by a newer SSLense version is never modified: SSLense stops with a message to install the newer version, so a downgrade cannot corrupt state.

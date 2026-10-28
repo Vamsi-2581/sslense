@@ -50,7 +50,7 @@ These keep users' sites safe and make SSLense supportable without paid support. 
 ### 4.1 Remaining safety work
 
 - Send the ARI `replaces` field on renewal orders (Certes does not expose it yet).
-- Journal challenge files so an interrupted validation is cleaned up on recovery.
+- ~~Journal challenge files so an interrupted validation is cleaned up on recovery.~~ Done October 28, 2026.
 - Certificate private-key permissions for IIS application-pool identities.
 - Configurable maintenance windows that can never let a certificate expire.
 - Recovery procedures for a compromised ACME account or private key.
@@ -62,13 +62,13 @@ Done (October 28, 2026): `SSLense.Cli health` and the GUI Health page; a redacte
 Remaining:
 
 - Stable, searchable error codes.
-- Show the health summary on the Dashboard, so problems are visible without opening the Health page.
+- ~~Show the health summary on the Dashboard.~~ Done October 28, 2026: a banner appears when the quick local checks find a problem.
 
 ### 4.3 Distribution
 
 - Release builds from GitHub Actions with SHA-256 checksums attached to each GitHub Release.
 - Authenticode signing of executables and the MSI, for example through the free [SignPath Foundation](https://signpath.org/) program for open-source projects. Unsigned MSIs trigger Windows SmartScreen warnings.
-- An installer UI showing the Apache-2.0 license.
+- ~~An installer UI showing the Apache-2.0 license.~~ Done October 28, 2026, with SSLense branding.
 - A [winget](https://learn.microsoft.com/windows/package-manager/) package.
 - Install, upgrade, repair, and uninstall verified on each supported Windows Server version.
 

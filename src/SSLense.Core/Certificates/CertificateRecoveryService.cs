@@ -1,3 +1,4 @@
+using SSLense.Core.Validation;
 using SSLense.Core.Config;
 using SSLense.Core.Iis;
 
@@ -8,12 +9,30 @@ internal sealed class CertificateRecoveryService(
     ICertificateOperationLock operationLock,
     ICertificateStore certificateStore,
     IManagedCertificateStore managedStore,
-    IIisService iisService) : ICertificateRecoveryService
+    IIisService iisService,
+    IChallengeHandler? challengeHandler = null) : ICertificateRecoveryService
 {
     public async Task<IReadOnlyList<CertificateRecoveryResult>> RecoverAsync(
         CancellationToken cancellationToken = default)
     {
         var results = new List<CertificateRecoveryResult>();
+        if (challengeHandler is not null)
+        {
+            try
+            {
+                results.AddRange(
+                    (await challengeHandler.CleanUpAbandonedAsync(cancellationToken).ConfigureAwait(false))
+                    .Select(message => new CertificateRecoveryResult(true, message)));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                results.Add(new CertificateRecoveryResult(
+                    false,
+                    $"Leftover HTTP-01 challenge files could not be cleaned up: {exception.Message} " +
+                    "It will be retried on the next start."));
+            }
+        }
+
         IReadOnlyList<CertificateTransaction> pending;
         try
         {

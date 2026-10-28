@@ -78,6 +78,22 @@ public sealed class HealthCheckServiceTests
     }
 
     [Fact]
+    public async Task RunQuickAsync_RunsOnlyLocalChecks()
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        var resolver = new Mock<IHostResolver>(MockBehavior.Strict);
+
+        var results = await CreateService(iis: iis, resolver: resolver).RunQuickAsync();
+
+        Assert.Equal(
+            ["Data folder permissions", "Configuration", "Managed certificates", "Interrupted operations",
+             "Renewal service", "Service heartbeat", "Notifications"],
+            results.Select(result => result.Name));
+        iis.VerifyNoOtherCalls();
+        resolver.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task RunAsync_DnsAndAcmeFailures_AreFailures()
     {
         var resolver = new Mock<IHostResolver>(MockBehavior.Strict);

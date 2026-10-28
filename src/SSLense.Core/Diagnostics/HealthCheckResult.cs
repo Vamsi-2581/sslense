@@ -19,4 +19,10 @@ public interface IHealthCheckService
     Task<IReadOnlyList<HealthCheckResult>> RunAsync(
         IProgress<ProgressEvent>? progress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The fast, local-only subset for dashboards: permissions, state files, interrupted operations, the
+    /// service and its heartbeat, and notifications. No network calls and no writes.
+    /// </summary>
+    Task<IReadOnlyList<HealthCheckResult>> RunQuickAsync(CancellationToken cancellationToken = default);
 }

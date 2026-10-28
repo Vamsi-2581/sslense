@@ -1,4 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <!--
     UpgradeCode identifies the SSLense product family across every version. Never change it,
@@ -19,7 +20,15 @@
     <!-- msiexec /i SSLense.msi START_SERVICE=0 installs the renewal service without starting it. -->
     <Property Id="START_SERVICE" Value="1" Secure="yes" />
 
-    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!--
+      Interactive installs show the Apache-2.0 license, which must be accepted before Install is enabled.
+      Silent installs (msiexec /qn) skip all dialogs.
+    -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(LicenseRtf)" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(RepoRoot)assets\branding\installer-dialog.bmp" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(RepoRoot)assets\branding\installer-banner.bmp" />
 
     <!-- Shown in Add/Remove Programs and on the Start menu shortcut. -->
     <Icon Id="sslense.ico" SourceFile="$(IconFile)" />

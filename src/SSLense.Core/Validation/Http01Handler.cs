@@ -29,10 +29,12 @@ internal sealed class Http01Handler : IChallengeHandler
         """;
 
     private readonly IFileSystem _fileSystem;
+    private readonly IChallengeJournal _journal;
 
-    public Http01Handler(IFileSystem fileSystem)
+    public Http01Handler(IFileSystem fileSystem, IChallengeJournal? journal = null)
     {
         _fileSystem = fileSystem;
+        _journal = journal ?? new NoOpChallengeJournal();
     }
 
     public async Task<IAsyncDisposable> PrepareAsync(
@@ -51,28 +53,31 @@ internal sealed class Http01Handler : IChallengeHandler
         var challengeDirectory = Path.Combine(wellKnownDirectory, "acme-challenge");
         var tokenPath = Path.Combine(challengeDirectory, challenge.Token);
         var webConfigPath = Path.Combine(challengeDirectory, "web.config");
-        var createdWellKnown = !_fileSystem.DirectoryExists(wellKnownDirectory);
-        var createdChallengeDirectory = !_fileSystem.DirectoryExists(challengeDirectory);
-        var originalToken = _fileSystem.FileExists(tokenPath)
-            ? await _fileSystem.ReadAllTextAsync(tokenPath, cancellationToken).ConfigureAwait(false)
-            : null;
-        var originalWebConfig = _fileSystem.FileExists(webConfigPath)
-            ? await _fileSystem.ReadAllTextAsync(webConfigPath, cancellationToken).ConfigureAwait(false)
-            : null;
-
-        _fileSystem.CreateDirectory(challengeDirectory);
-        var cleanup = new ChallengeCleanup(
-            _fileSystem,
+        var owner = JsonChallengeJournal.CurrentProcess;
+        var artifacts = new ChallengeArtifacts(
+            Guid.NewGuid(),
             tokenPath,
-            originalToken,
+            _fileSystem.FileExists(tokenPath)
+                ? await _fileSystem.ReadAllTextAsync(tokenPath, cancellationToken).ConfigureAwait(false)
+                : null,
             webConfigPath,
-            originalWebConfig,
+            _fileSystem.FileExists(webConfigPath)
+                ? await _fileSystem.ReadAllTextAsync(webConfigPath, cancellationToken).ConfigureAwait(false)
+                : null,
             challengeDirectory,
             wellKnownDirectory,
-            createdChallengeDirectory,
-            createdWellKnown);
+            !_fileSystem.DirectoryExists(challengeDirectory),
+            !_fileSystem.DirectoryExists(wellKnownDirectory),
+            owner.ProcessId,
+            owner.StartedAt,
+            DateTimeOffset.UtcNow);
+
+        // Journal first: if the process dies after this point, recovery can still restore the site.
+        await _journal.RecordAsync(artifacts, cancellationToken).ConfigureAwait(false);
+        var cleanup = new ChallengeCleanup(_fileSystem, _journal, artifacts);
         try
         {
+            _fileSystem.CreateDirectory(challengeDirectory);
             await _fileSystem.WriteAllTextAsync(tokenPath, challenge.KeyAuthorization, cancellationToken)
                 .ConfigureAwait(false);
             await _fileSystem.WriteAllTextAsync(webConfigPath, ChallengeWebConfig, cancellationToken)
@@ -84,6 +89,20 @@ internal sealed class Http01Handler : IChallengeHandler
             await cleanup.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    public async Task<IReadOnlyList<string>> CleanUpAbandonedAsync(CancellationToken cancellationToken)
+    {
+        var messages = new List<string>();
+        foreach (var artifacts in await _journal.GetAbandonedAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await new ChallengeCleanup(_fileSystem, _journal, artifacts).DisposeAsync().ConfigureAwait(false);
+            messages.Add(
+                $"Removed HTTP-01 challenge files left in '{artifacts.ChallengeDirectory}' by an interrupted validation " +
+                $"started {artifacts.CreatedAt:yyyy-MM-dd HH:mm} UTC.");
+        }
+
+        return messages;
     }
 
     private static void ValidateToken(string token)
@@ -99,14 +118,8 @@ internal sealed class Http01Handler : IChallengeHandler
 
     private sealed class ChallengeCleanup(
         IFileSystem fileSystem,
-        string tokenPath,
-        string? originalToken,
-        string webConfigPath,
-        string? originalWebConfig,
-        string challengeDirectory,
-        string wellKnownDirectory,
-        bool createdChallengeDirectory,
-        bool createdWellKnown) : IAsyncDisposable
+        IChallengeJournal journal,
+        ChallengeArtifacts artifacts) : IAsyncDisposable
     {
         private int _disposed;
 
@@ -117,35 +130,38 @@ internal sealed class Http01Handler : IChallengeHandler
                 return;
             }
 
-            if (originalToken is null)
+            if (artifacts.OriginalToken is null)
             {
-                fileSystem.DeleteFile(tokenPath);
+                fileSystem.DeleteFile(artifacts.TokenPath);
             }
             else
             {
-                await fileSystem.WriteAllTextAsync(tokenPath, originalToken, CancellationToken.None)
+                await fileSystem.WriteAllTextAsync(artifacts.TokenPath, artifacts.OriginalToken, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 
-            if (originalWebConfig is null)
+            if (artifacts.OriginalWebConfig is null)
             {
-                fileSystem.DeleteFile(webConfigPath);
+                fileSystem.DeleteFile(artifacts.WebConfigPath);
             }
             else
             {
-                await fileSystem.WriteAllTextAsync(webConfigPath, originalWebConfig, CancellationToken.None)
+                await fileSystem.WriteAllTextAsync(artifacts.WebConfigPath, artifacts.OriginalWebConfig, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 
-            if (createdChallengeDirectory)
+            if (artifacts.CreatedChallengeDirectory)
             {
-                fileSystem.DeleteDirectoryIfEmpty(challengeDirectory);
+                fileSystem.DeleteDirectoryIfEmpty(artifacts.ChallengeDirectory);
             }
 
-            if (createdWellKnown)
+            if (artifacts.CreatedWellKnown)
             {
-                fileSystem.DeleteDirectoryIfEmpty(wellKnownDirectory);
+                fileSystem.DeleteDirectoryIfEmpty(artifacts.WellKnownDirectory);
             }
+
+            // Only once the site is restored, so a failure above leaves the entry for recovery to retry.
+            await journal.CompleteAsync(artifacts.Id).ConfigureAwait(false);
         }
     }
 }

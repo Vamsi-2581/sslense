@@ -166,6 +166,28 @@ public sealed class CertificateRecoveryServiceTests
         journal.Verify(value => value.CompleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
+    [Fact]
+    public async Task RecoverAsync_CleansUpAbandonedChallengeFilesFirst()
+    {
+        var journal = new Mock<ICertificateTransactionJournal>(MockBehavior.Strict);
+        journal.Setup(value => value.GetPendingAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var challenges = new Mock<SSLense.Core.Validation.IChallengeHandler>(MockBehavior.Strict);
+        challenges.Setup(value => value.CleanUpAbandonedAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["Removed HTTP-01 challenge files left in 'C:\\inetpub\\site'."]);
+        var service = new CertificateRecoveryService(
+            journal.Object,
+            new Mock<ICertificateOperationLock>(MockBehavior.Strict).Object,
+            new Mock<ICertificateStore>(MockBehavior.Strict).Object,
+            new Mock<IManagedCertificateStore>(MockBehavior.Strict).Object,
+            new Mock<IIisService>(MockBehavior.Strict).Object,
+            challenges.Object);
+
+        var result = Assert.Single(await service.RecoverAsync());
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("challenge files", result.Message, StringComparison.Ordinal);
+    }
+
     private static CertificateTransaction CreateTransaction(string siteName) => new(
         Guid.NewGuid(),
         new ManagedCertificate(

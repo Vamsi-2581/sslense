@@ -31,4 +31,6 @@ public static class AppPaths
     public static string TransactionDirectory => Path.Combine(DataDirectory, "transactions");
 
     public static string ServiceHeartbeatFile => Path.Combine(DataDirectory, "service-heartbeat.json");
+
+    public static string ChallengeJournalDirectory => Path.Combine(DataDirectory, "challenges");
 }
