@@ -276,7 +276,7 @@ It checks elevation, data-folder permissions, configuration and state files, int
 To ask for help, create a diagnostic bundle and attach it to a GitHub issue:
 
 ```powershell
-SSLense.Cli diagnostics                  # sslense-diagnostics-<timestamp>.zip in the current folder
+SSLense.Cli diagnostics                  # sslense-diagnostics-<timestamp>.zip on your Desktop
 SSLense.Cli diagnostics --redact-hosts   # also replaces site and host names, for public posts
 ```
 

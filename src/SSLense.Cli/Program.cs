@@ -12,6 +12,7 @@ using SSLense.Cli;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Events;
 using System.CommandLine;
 
 // Secure ProgramData before the logger creates the logs folder inside it. Does nothing when not elevated.
@@ -19,8 +20,11 @@ var securityWarnings = DataDirectorySecurity.SecureAtStartup();
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
-    // Console output stays readable: no stack traces. The log file below keeps the full exception.
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}")
+    // The console shows warnings only: commands print their own results and "Error:" lines, so logged
+    // information and errors would just repeat them. The log file below keeps everything, with full exceptions.
+    .WriteTo.Logger(console => console
+        .Filter.ByIncludingOnly(logEvent => logEvent.Level == LogEventLevel.Warning)
+        .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}"))
     .WriteTo.File(
         Path.Combine(AppPaths.LogDirectory, "sslense-.log"),
         rollingInterval: RollingInterval.Day,
@@ -203,7 +207,7 @@ static RootCommand CreateRootCommand(IServiceProvider services)
 
     var diagnosticsOutputOption = new Option<string?>("--output")
     {
-        Description = "Zip file to create (default: sslense-diagnostics-<timestamp>.zip in the current folder)."
+        Description = "Zip file to create (default: sslense-diagnostics-<timestamp>.zip on your Desktop)."
     };
     var diagnosticsRedactHostsOption = new Option<bool>("--redact-hosts")
     {
@@ -593,10 +597,23 @@ static async Task<int> DiagnosticsAsync(
 {
     try
     {
+        // An elevated terminal usually starts in C:\Windows\System32, so default to the Desktop instead.
         var path = string.IsNullOrWhiteSpace(output)
-            ? Path.Combine(Environment.CurrentDirectory, $"sslense-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip")
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) is { Length: > 0 } desktop
+                    ? desktop
+                    : Environment.CurrentDirectory,
+                $"sslense-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip")
             : output;
-        var progress = new Progress<ProgressEvent>(value => Console.WriteLine(value.Message));
+
+        // Only the bundle's own steps; the embedded health check's per-check progress is noise here.
+        var progress = new Progress<ProgressEvent>(value =>
+        {
+            if (value.Step == "diagnostics")
+            {
+                Console.WriteLine(value.Message);
+            }
+        });
         var result = await bundleService
             .CreateAsync(new DiagnosticBundleRequest(path, redactHosts), progress, cancellationToken)
             .ConfigureAwait(false);

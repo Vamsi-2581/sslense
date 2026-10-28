@@ -204,7 +204,9 @@ internal sealed class AcmeService : IAcmeService
                 .ConfigureAwait(false);
             try
             {
-                progress?.Report(new ProgressEvent("binding", "Creating or updating IIS HTTPS bindings with SNI."));
+                progress?.Report(new ProgressEvent(
+                    "binding",
+                    "Creating or updating IIS HTTPS bindings with SNI, then confirming over HTTPS that the new certificate is served."));
                 await _iisService.ConfigureHttpsBindingsAsync(
                         site.Name,
                         hosts,
