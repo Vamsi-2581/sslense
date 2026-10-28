@@ -11,6 +11,7 @@ SSLense includes or is built with the components below. Each is used under its o
 | CommunityToolkit.Mvvm | MIT | <https://github.com/CommunityToolkit/dotnet> |
 | Certes | MIT | <https://github.com/fszlin/certes> |
 | BouncyCastle.Cryptography | MIT | <https://github.com/bcgit/bc-csharp> |
+| MailKit, MimeKit | MIT | <https://github.com/jstedfast/MailKit> |
 | Serilog, Serilog.Extensions.Hosting, Serilog.Extensions.Logging, Serilog.Sinks.Console, Serilog.Sinks.File | Apache-2.0 | <https://github.com/serilog/serilog> |
 | Microsoft.Web.Administration | Microsoft .NET Library License | <https://www.nuget.org/packages/Microsoft.Web.Administration> |
 | WiX Toolset custom actions embedded in the MSI (WixToolset.Util.wixext) | MS-RL | <https://github.com/wixtoolset/wix> |

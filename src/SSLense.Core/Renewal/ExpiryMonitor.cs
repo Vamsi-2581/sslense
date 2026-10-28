@@ -82,14 +82,16 @@ internal sealed class ExpiryMonitor(
                 NotificationKind.ExpiryWarning,
                 $"SSLense certificate EXPIRED: {certificate.SiteName}",
                 $"The {environment} certificate for {certificate.SiteName} ({hosts}) expired at " +
-                $"{certificate.NotAfter:O}. HTTPS clients now reject it.{renewalState}")
+                $"{certificate.NotAfter:O}. HTTPS clients now reject it.{renewalState}",
+                NotificationSeverity.Error)
             : new NotificationMessage(
                 NotificationKind.ExpiryWarning,
                 level == ExpiryWarningLevel.Critical
                     ? $"SSLense certificate expires very soon: {certificate.SiteName}"
                     : $"SSLense certificate expires soon: {certificate.SiteName}",
                 $"The {environment} certificate for {certificate.SiteName} ({hosts}) expires at " +
-                $"{certificate.NotAfter:O} and has not been renewed yet.{renewalState}");
+                $"{certificate.NotAfter:O} and has not been renewed yet.{renewalState}",
+                level == ExpiryWarningLevel.Critical ? NotificationSeverity.Error : NotificationSeverity.Warning);
     }
 
     private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;

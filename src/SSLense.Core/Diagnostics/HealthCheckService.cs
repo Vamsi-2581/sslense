@@ -400,24 +400,37 @@ internal sealed class HealthCheckService(
             return new HealthCheckResult(name, HealthStatus.Warning, "Configuration could not be read.");
         }
 
+        var notifications = config.Notifications;
         var channels = new List<string>();
-        if (config.Notifications.Smtp is not null)
+        if (notifications.Email is { } email)
         {
-            channels.Add("SMTP email");
+            channels.Add($"email via {email.Host}");
         }
 
-        if (config.Notifications.Webhook is not null)
+        channels.AddRange(notifications.Chat.Select(Notifications.Notifier.DescribeChat));
+        if (notifications.Heartbeat is not null)
         {
-            channels.Add("webhook");
+            channels.Add("heartbeat");
         }
 
-        return channels.Count > 0
-            ? Pass(name, $"Configured: {string.Join(" and ", channels)}. Use 'SSLense.Cli notifications test' to send a test.")
+        var eventLog = notifications.EventLogEnabled ? "The Windows Event Log also records every notification." : "The Windows Event Log is turned off.";
+        if (channels.Count > 0)
+        {
+            return Pass(name, $"Configured: {string.Join(", ", channels)}. {eventLog} Use 'SSLense.Cli notifications test' to check delivery.");
+        }
+
+        const string fix = "Add email, Teams, Slack, ntfy, or a heartbeat with 'SSLense.Cli notifications' or in Settings.";
+        return notifications.EventLogEnabled
+            ? new HealthCheckResult(
+                name,
+                HealthStatus.Warning,
+                "Problems are only written to the Windows Event Log, so nobody is alerted unless that log is monitored.",
+                fix)
             : new HealthCheckResult(
                 name,
                 HealthStatus.Warning,
-                "No notification channel is configured, so renewal failures and expiry warnings reach nobody.",
-                "Configure SMTP or a webhook with 'SSLense.Cli notifications configure' or in Settings.");
+                "No notification channel is configured and the Event Log is off, so renewal failures and expiry warnings are recorded only in SSLense's own log.",
+                fix);
     }
 
     private static HealthCheckResult Pass(string name, string message) => new(name, HealthStatus.Pass, message);

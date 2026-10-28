@@ -15,22 +15,83 @@
    </StackPanel></GroupBox>
 
    <GroupBox Header="Notifications" Margin="0,0,0,14"><StackPanel>
-    <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,16"><TextBlock Text="{Binding NotificationStatus}" FontWeight="SemiBold"/></Border>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
+               Text="Choose any combination. Every alert is also written to the Windows Event Log (source SSLense), which most monitoring tools can watch."/>
+
+    <TextBlock Text="EMAIL" Style="{StaticResource SectionTitle}"/>
+    <TextBlock Text="{Binding EmailStatus}" Foreground="{StaticResource MutedTextBrush}" Margin="0,2,0,10"/>
+    <TextBlock Text="PRESET" Style="{StaticResource FieldLabel}"/>
+    <ComboBox ItemsSource="{Binding EmailPresets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="DisplayName" Width="420" HorizontalAlignment="Left"/>
+    <TextBlock Text="{Binding PresetHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,6,0,10"/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <StackPanel Margin="0,0,14,0">
-      <TextBlock Text="SMTP HOST" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding SmtpHost}"/><TextBlock Text="PORT" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><TextBox Text="{Binding SmtpPort}"/>
-      <CheckBox Content="Use TLS" IsChecked="{Binding SmtpTls}" Margin="0,12"/><TextBlock Text="USERNAME" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding SmtpUsername}"/>
-      <TextBlock Text="PASSWORD (ENTER TO REPLACE)" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><PasswordBox PasswordChanged="OnSmtpPasswordChanged"/>
+      <TextBlock Text="SMTP HOST" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding EmailHost}" AutomationProperties.Name="SMTP host"/>
+      <TextBlock Text="PORT" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><TextBox Text="{Binding EmailPort}" Width="120" HorizontalAlignment="Left" AutomationProperties.Name="SMTP port"/>
+      <TextBlock Text="SECURITY" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><ComboBox ItemsSource="{Binding SecurityOptions}" SelectedItem="{Binding EmailSecurity}" AutomationProperties.Name="SMTP security"/>
+      <TextBlock Text="SIGN-IN" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><ComboBox ItemsSource="{Binding AuthenticationOptions}" SelectedItem="{Binding EmailAuthentication}" AutomationProperties.Name="SMTP sign-in"/>
+      <TextBlock Text="None: relays that accept mail by IP address. Password: servers that need a login." Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
      </StackPanel>
      <StackPanel Grid.Column="1">
-      <TextBlock Text="FROM ADDRESS" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding SmtpFrom}"/><TextBlock Text="TO ADDRESS" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><TextBox Text="{Binding SmtpTo}"/>
-      <TextBlock Text="WEBHOOK URL (ENTER TO REPLACE)" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><PasswordBox PasswordChanged="OnWebhookChanged"/>
-      <CheckBox Content="Notify on successful renewal" IsChecked="{Binding NotifyOnSuccess}" Margin="0,10,0,0"/>
+      <TextBlock Text="USERNAME (PASSWORD SIGN-IN)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding EmailUsername}" AutomationProperties.Name="SMTP username"/>
+      <TextBlock Text="PASSWORD (LEAVE EMPTY TO KEEP)" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><PasswordBox x:Name="EmailPasswordBox" PasswordChanged="OnEmailPasswordChanged" AutomationProperties.Name="SMTP password"/>
+      <TextBlock Text="FROM ADDRESS" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><TextBox Text="{Binding EmailFrom}" AutomationProperties.Name="Sender address"/>
+      <TextBlock Text="TO ADDRESSES (COMMA-SEPARATED)" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/><TextBox Text="{Binding EmailTo}" AutomationProperties.Name="Recipient addresses"/>
      </StackPanel>
     </Grid>
-    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-     <Button Content="Save notifications" Command="{Binding SaveNotificationsCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/><Button Content="Send test" Command="{Binding TestNotificationCommand}" Margin="0,0,8,0"/><Button Content="Clear settings" Command="{Binding ClearNotificationsCommand}" Style="{StaticResource DangerButton}"/>
+    <StackPanel Orientation="Horizontal" Margin="0,12,0,18">
+     <Button Content="Save email" Command="{Binding SaveEmailCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+     <Button Content="Remove email" Command="{Binding RemoveEmailCommand}" Style="{StaticResource DangerButton}"/>
     </StackPanel>
+
+    <TextBlock Text="CHAT AND PUSH" Style="{StaticResource SectionTitle}"/>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,2,0,10"
+               Text="Teams: a Workflows 'Post to a channel when a webhook request is received' URL. ntfy: a topic URL such as https://ntfy.sh/your-topic (free phone push). Telegram: https://api.telegram.org/bot&lt;token&gt;/sendMessage?chat_id=&lt;id&gt;."/>
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" ClipToBounds="True" Margin="0,0,0,8">
+     <DataGrid ItemsSource="{Binding ChatChannels}" SelectedItem="{Binding SelectedChat}" Height="110" AutomationProperties.Name="Chat channels">
+      <DataGrid.Columns>
+       <DataGridTextColumn Header="#" Binding="{Binding Number}" Width="40"/>
+       <DataGridTextColumn Header="Type" Binding="{Binding Format}" Width="110"/>
+       <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+       <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="2*"/>
+      </DataGrid.Columns>
+     </DataGrid>
+    </Border>
+    <Button Content="Remove selected channel" Command="{Binding RemoveChatCommand}" Style="{StaticResource DangerButton}" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+    <Grid Margin="0,0,0,18"><Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <StackPanel Margin="0,0,8,0"><TextBlock Text="TYPE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding ChatFormats}" SelectedItem="{Binding NewChatFormat}" AutomationProperties.Name="Chat type"/></StackPanel>
+     <StackPanel Grid.Column="1" Margin="0,0,8,0"><TextBlock Text="NAME (OPTIONAL)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding NewChatName}" AutomationProperties.Name="Chat name"/></StackPanel>
+     <StackPanel Grid.Column="2" Margin="0,0,8,0"><TextBlock Text="WEBHOOK URL" Style="{StaticResource FieldLabel}"/><PasswordBox x:Name="ChatUrlBox" PasswordChanged="OnChatUrlChanged" AutomationProperties.Name="Chat webhook URL"/></StackPanel>
+     <Button Grid.Column="3" Content="Add channel" Command="{Binding AddChatCommand}" Style="{StaticResource PrimaryButton}" VerticalAlignment="Bottom"/>
+    </Grid>
+
+    <TextBlock Text="HEARTBEAT" Style="{StaticResource SectionTitle}"/>
+    <TextBlock Text="{Binding HeartbeatStatus}" Foreground="{StaticResource MutedTextBrush}" Margin="0,2,0,4"/>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"
+               Text="A ping URL from healthchecks.io, Uptime Kuma, or similar. The service pings it after every healthy hourly check, so your monitor alerts you if the server or service stops, or renewals keep failing. Expect a ping every hour with a two to three hour grace period."/>
+    <Grid Margin="0,0,0,18"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <PasswordBox x:Name="HeartbeatUrlBox" PasswordChanged="OnHeartbeatUrlChanged" Margin="0,0,8,0" AutomationProperties.Name="Heartbeat URL"/>
+     <Button Grid.Column="1" Content="Save heartbeat" Command="{Binding SaveHeartbeatCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+     <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveHeartbeatCommand}" Style="{StaticResource DangerButton}"/>
+    </Grid>
+
+    <TextBlock Text="OPTIONS" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+    <CheckBox Content="Write alerts to the Windows Event Log (recommended)" IsChecked="{Binding EventLogEnabled}"/>
+    <CheckBox Content="Also send successful renewals to email and chat" IsChecked="{Binding NotifyOnSuccess}" Margin="0,6,0,0"/>
+    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+     <Button Content="Save options" Command="{Binding SaveOptionsCommand}" Margin="0,0,8,0"/>
+     <Button Content="Send test" Command="{Binding TestNotificationCommand}" Style="{StaticResource PrimaryButton}"/>
+    </StackPanel>
+    <ItemsControl ItemsSource="{Binding TestResults}" Margin="0,10,0,0">
+     <ItemsControl.ItemTemplate>
+      <DataTemplate>
+       <TextBlock TextWrapping="Wrap" Margin="0,2">
+        <Run Text="{Binding Channel, Mode=OneWay}" FontWeight="SemiBold"/><Run Text=": "/><Run Text="{Binding Message, Mode=OneWay}"/>
+        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+         <Style.Triggers><DataTrigger Binding="{Binding Succeeded}" Value="False"><Setter Property="Foreground" Value="{StaticResource DangerBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+       </TextBlock>
+      </DataTemplate>
+     </ItemsControl.ItemTemplate>
+    </ItemsControl>
    </StackPanel></GroupBox>
 
    <GroupBox Header="Windows Service"><StackPanel>

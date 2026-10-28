@@ -2,6 +2,7 @@ using System.Reflection;
 using SSLense.Core;
 using SSLense.Core.Certificates;
 using SSLense.Core.Diagnostics;
+using SSLense.Core.Notifications;
 using SSLense.Core.Renewal;
 
 namespace SSLense.Service;
@@ -11,6 +12,7 @@ internal sealed class RenewalWorker(
     IExpiryMonitor expiryMonitor,
     ICertificateRecoveryService recoveryService,
     IServiceHeartbeatStore heartbeatStore,
+    INotifier notifier,
     ILogger<RenewalWorker> logger) : BackgroundService
 {
     // Hourly checks are cheap: certificates that are not due and retries still backing off
@@ -59,6 +61,28 @@ internal sealed class RenewalWorker(
                 },
                 cancellationToken)
             .ConfigureAwait(false);
+
+        // Ping only when healthy: pings then stop both when the service dies and while renewals keep failing,
+        // so an external monitor alerts in either case even with no other channel configured.
+        if (problem is null)
+        {
+            await PingHeartbeatAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task PingHeartbeatAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await notifier.PingHeartbeatAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning("Heartbeat ping failed: {Message}", exception is OperationCanceledException ? "timed out" : exception.Message);
+        }
     }
 
     private async Task SaveHeartbeatAsync(ServiceHeartbeat heartbeat, CancellationToken cancellationToken)

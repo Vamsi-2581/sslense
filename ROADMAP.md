@@ -18,7 +18,7 @@ Complete:
 - IIS site and binding discovery; HTTP-01 issuance against separated Let's Encrypt staging and guarded production
 - Certificate-store installation with non-exportable keys and no retained PFX files; SNI binding management with live HTTPS verification and automatic rollback
 - Automatic renewal service: ARI-aware scheduling with a lifetime-relative fallback, a persisted retry schedule, hourly checks, rate-limit handling, and escalating failure notifications
-- Independent, lifetime-relative expiry monitoring; SMTP and webhook notifications
+- Independent, lifetime-relative expiry monitoring; notifications by email (any SMTP setup, including IP-based relays), Teams, Slack, Discord, Telegram, ntfy, generic webhooks, a heartbeat ping, and the Windows Event Log
 - Cross-process per-site locking, durable operation journals, and non-fatal startup recovery
 - Health check (CLI and GUI) and redacted diagnostic bundles for support
 - Versioned state schemas with backup before migration and safe refusal of newer schemas
@@ -66,7 +66,7 @@ Remaining:
 
 ### 4.3 Distribution
 
-- Release builds from GitHub Actions with SHA-256 checksums attached to each GitHub Release.
+- ~~Release builds from GitHub Actions with SHA-256 checksums attached to each GitHub Release.~~ Done October 28, 2026 (`.github/workflows/release.yml`); first used by the v0.9.10 tag.
 - Authenticode signing of executables and the MSI, for example through the free [SignPath Foundation](https://signpath.org/) program for open-source projects. Unsigned MSIs trigger Windows SmartScreen warnings.
 - ~~An installer UI showing the Apache-2.0 license.~~ Done October 28, 2026, with SSLense branding.
 - A [winget](https://learn.microsoft.com/windows/package-manager/) package.
@@ -84,7 +84,7 @@ Remaining:
 
 - A documented threat model, updated with each major architecture change.
 - Dependency and vulnerability scanning in CI, and a software bill of materials for each release.
-- Private vulnerability reporting (see [SECURITY.md](SECURITY.md)) with response targets.
+- ~~Private vulnerability reporting (see [SECURITY.md](SECURITY.md)) with response targets.~~ Done October 28, 2026.
 - Release notes, known issues, and an upgrade compatibility table.
 - Documentation: a quick start, firewall/DNS/proxy requirements, troubleshooting runbooks, and migration guides from manual IIS certificates and other ACME clients.
 
@@ -97,7 +97,7 @@ Ordered roughly by expected demand. Community feedback decides the order.
 - **Existing-certificate discovery and adoption:** find expired, expiring, duplicate, self-signed, and staging certificates in IIS and `LocalMachine\My`, and adopt them without reissuing.
 - **More certificate authorities:** configurable ACME directories and External Account Binding (ZeroSSL, Google Trust Services, internal ACME servers), never failing over to another CA without explicit configuration.
 - **Automation:** JSON output for every CLI command, documented exit codes, a PowerShell module, and configuration import/export.
-- **More notification channels:** Microsoft Teams, Slack, and signed webhook payloads.
+- **More notification channels:** signed webhook payloads, and email through the Microsoft Graph API for Microsoft 365 tenants that disable SMTP. (Teams, Slack, Discord, Telegram, ntfy, a heartbeat, the Event Log, and email for any SMTP setup were added October 28, 2026.)
 - **HTTP-to-HTTPS redirect helper** using an IIS URL Rewrite rule.
 - **Other deployment targets:** HTTP.sys, Kestrel, Remote Desktop Services, SQL Server, and Exchange, each with install, verify, rollback, and remove operations.
 - **Multi-server management:** a possible later project, built so each server's renewal keeps working when any central component is unavailable.

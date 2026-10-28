@@ -164,19 +164,24 @@ internal sealed class DiagnosticBundleService(
         DefaultEmail = SecretRedactor.MaskEmail(config.DefaultEmail),
         Notifications = config.Notifications with
         {
-            Smtp = config.Notifications.Smtp is { } smtp
-                ? smtp with
+            Email = config.Notifications.Email is { } email
+                ? email with
                 {
                     // An email-style login keeps its domain for diagnosis; any other login is removed.
-                    Username = smtp.Username is null ? null
-                        : smtp.Username.Contains('@') ? SecretRedactor.MaskEmail(smtp.Username)
+                    Username = email.Username is null ? null
+                        : email.Username.Contains('@') ? SecretRedactor.MaskEmail(email.Username)
                         : SecretRedactor.Marker,
-                    ProtectedPassword = smtp.ProtectedPassword is null ? null : SecretRedactor.Marker,
-                    From = SecretRedactor.MaskEmail(smtp.From) ?? string.Empty,
-                    To = SecretRedactor.MaskEmail(smtp.To) ?? string.Empty
+                    ProtectedPassword = email.ProtectedPassword is null ? null : SecretRedactor.Marker,
+                    From = SecretRedactor.MaskEmail(email.From) ?? string.Empty,
+                    To = email.To.Select(recipient => SecretRedactor.MaskEmail(recipient) ?? string.Empty).ToArray()
                 }
                 : null,
-            Webhook = config.Notifications.Webhook is null ? null : new WebhookNotificationConfig(SecretRedactor.Marker)
+
+            // Channel types and names help diagnosis; the URLs carry the credential.
+            Chat = config.Notifications.Chat.Select(chat => chat with { ProtectedUrl = SecretRedactor.Marker }).ToArray(),
+            Heartbeat = config.Notifications.Heartbeat is null ? null : new HeartbeatNotificationConfig(SecretRedactor.Marker),
+            Smtp = null,
+            Webhook = null
         }
     };
 

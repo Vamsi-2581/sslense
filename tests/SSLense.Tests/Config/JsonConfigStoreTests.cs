@@ -26,6 +26,43 @@ public sealed class JsonConfigStoreTests
     }
 
     [Fact]
+    public async Task LoadAsync_SchemaOneNotifications_MigrateToEmailAndChat()
+    {
+        const string v1 = """
+            {
+              "schemaVersion": 1,
+              "notifications": {
+                "smtp": { "host": "relay.contoso.com", "port": 25, "enableSsl": true, "username": null,
+                          "protectedPassword": null, "from": "alerts@contoso.com", "to": "ops@contoso.com; admin@contoso.com" },
+                "webhook": { "protectedUrl": "cHJvdGVjdGVk" },
+                "notifyOnSuccess": true
+              }
+            }
+            """;
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.Files[ConfigPath] = v1;
+        var store = new JsonConfigStore(fileSystem, ConfigPath);
+
+        var loaded = await store.LoadAsync();
+        await store.SaveAsync(loaded);
+        var notifications = (await store.LoadAsync()).Notifications;
+
+        var email = notifications.Email!;
+        Assert.Equal(SmtpSecurity.StartTls, email.Security);
+        Assert.Equal(SmtpAuthentication.None, email.Authentication);
+        Assert.Equal(["ops@contoso.com", "admin@contoso.com"], email.To);
+        var chat = Assert.Single(notifications.Chat);
+        Assert.Equal(ChatFormat.Generic, chat.Format);
+        Assert.Equal("cHJvdGVjdGVk", chat.ProtectedUrl);
+        Assert.True(notifications.NotifyOnSuccess);
+        Assert.True(notifications.EventLogEnabled);
+        Assert.Null(notifications.Smtp);
+        Assert.Equal(v1, fileSystem.Files[$"{ConfigPath}.v1.bak"]);
+        Assert.DoesNotContain("\"smtp\"", fileSystem.Files[ConfigPath], StringComparison.Ordinal);
+        Assert.Contains("\"StartTls\"", fileSystem.Files[ConfigPath], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task LoadAndSave_NewerSchema_FailWithoutChangingTheFile()
     {
         const string newer = """{ "schemaVersion": 99, "defaultEmail": "admin@example.com" }""";
@@ -82,7 +119,12 @@ public sealed class JsonConfigStoreTests
         await store.SaveAsync(expected);
         var actual = await store.LoadAsync();
 
-        Assert.Equal(expected with { SchemaVersion = StateSchema.Config }, actual);
+        // Records compare list properties by reference, so the (empty) chat list is compared by content.
+        Assert.Empty(actual.Notifications.Chat);
+        Assert.Equal(
+            expected with { SchemaVersion = StateSchema.Config, Notifications = actual.Notifications },
+            actual);
+        Assert.Equal(expected.Notifications with { Chat = actual.Notifications.Chat }, actual.Notifications);
         Assert.Contains("\"useStaging\": true", persistedJson, StringComparison.Ordinal);
         fileSystem.VerifyAll();
     }

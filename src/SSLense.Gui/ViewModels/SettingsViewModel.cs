@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using System.IO;
 using CommunityToolkit.Mvvm.Input;
@@ -18,16 +19,28 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private string defaultEmail = string.Empty;
     [ObservableProperty] private int renewalThresholdDays = 30;
-    [ObservableProperty] private string smtpHost = string.Empty;
-    [ObservableProperty] private int smtpPort = 587;
-    [ObservableProperty] private bool smtpTls = true;
-    [ObservableProperty] private string smtpUsername = string.Empty;
-    [ObservableProperty] private string smtpPassword = string.Empty;
-    [ObservableProperty] private string smtpFrom = string.Empty;
-    [ObservableProperty] private string smtpTo = string.Empty;
-    [ObservableProperty] private string webhookUrl = string.Empty;
+
+    [ObservableProperty] private EmailPreset? selectedPreset;
+    [ObservableProperty] private string emailHost = string.Empty;
+    [ObservableProperty] private int emailPort = 587;
+    [ObservableProperty] private SmtpSecurity emailSecurity = SmtpSecurity.Auto;
+    [ObservableProperty] private SmtpAuthentication emailAuthentication = SmtpAuthentication.None;
+    [ObservableProperty] private string emailUsername = string.Empty;
+    [ObservableProperty] private string emailPassword = string.Empty;
+    [ObservableProperty] private string emailFrom = string.Empty;
+    [ObservableProperty] private string emailTo = string.Empty;
+    [ObservableProperty] private string emailStatus = "Not configured.";
+
+    [ObservableProperty] private ChatFormat newChatFormat = ChatFormat.Teams;
+    [ObservableProperty] private string newChatName = string.Empty;
+    [ObservableProperty] private string newChatUrl = string.Empty;
+    [ObservableProperty] private ChatOverview? selectedChat;
+
+    [ObservableProperty] private string heartbeatUrl = string.Empty;
+    [ObservableProperty] private string heartbeatStatus = "Not configured.";
+    [ObservableProperty] private bool eventLogEnabled = true;
     [ObservableProperty] private bool notifyOnSuccess;
-    [ObservableProperty] private string notificationStatus = "Not configured";
+
     [ObservableProperty] private string servicePath = Path.Combine(AppContext.BaseDirectory, "SSLense.Service.exe");
     [ObservableProperty] private string serviceStatus = "Checking...";
     [ObservableProperty] private bool isBusy;
@@ -47,9 +60,18 @@ public partial class SettingsViewModel : ObservableObject
         _serviceManager = serviceManager;
         _logger = logger;
         SaveGeneralCommand = Command(SaveGeneralAsync);
-        SaveNotificationsCommand = Command(SaveNotificationsAsync);
+        SaveEmailCommand = Command(SaveEmailAsync);
+        RemoveEmailCommand = Command(token => ChangeNotificationsAsync(
+            ct => _notificationSettingsService.RemoveEmailAsync(ct), "Email settings removed.", token));
+        AddChatCommand = Command(AddChatAsync);
+        RemoveChatCommand = Command(RemoveChatAsync);
+        SaveHeartbeatCommand = Command(token => ChangeNotificationsAsync(
+            ct => _notificationSettingsService.SetHeartbeatAsync(HeartbeatUrl, ct), "Heartbeat saved.", token));
+        RemoveHeartbeatCommand = Command(token => ChangeNotificationsAsync(
+            ct => _notificationSettingsService.SetHeartbeatAsync(null, ct), "Heartbeat removed.", token));
+        SaveOptionsCommand = Command(token => ChangeNotificationsAsync(
+            ct => _notificationSettingsService.SetOptionsAsync(EventLogEnabled, NotifyOnSuccess, ct), "Notification options saved.", token));
         TestNotificationCommand = Command(TestNotificationAsync);
-        ClearNotificationsCommand = Command(ClearNotificationsAsync);
         RefreshServiceCommand = Command(RefreshServiceAsync);
         InstallServiceCommand = Command(InstallServiceAsync);
         StartServiceCommand = Command(StartServiceAsync);
@@ -57,10 +79,23 @@ public partial class SettingsViewModel : ObservableObject
         UninstallServiceCommand = Command(UninstallServiceAsync);
     }
 
+    public IReadOnlyList<EmailPreset> EmailPresets => EmailPreset.All;
+    public IReadOnlyList<SmtpSecurity> SecurityOptions { get; } = Enum.GetValues<SmtpSecurity>();
+    public IReadOnlyList<SmtpAuthentication> AuthenticationOptions { get; } = Enum.GetValues<SmtpAuthentication>();
+    public IReadOnlyList<ChatFormat> ChatFormats { get; } = Enum.GetValues<ChatFormat>();
+    public ObservableCollection<ChatOverview> ChatChannels { get; } = [];
+    public ObservableCollection<ChannelResult> TestResults { get; } = [];
+    public string PresetHint => SelectedPreset?.Hint ?? string.Empty;
+
     public IAsyncRelayCommand SaveGeneralCommand { get; }
-    public IAsyncRelayCommand SaveNotificationsCommand { get; }
+    public IAsyncRelayCommand SaveEmailCommand { get; }
+    public IAsyncRelayCommand RemoveEmailCommand { get; }
+    public IAsyncRelayCommand AddChatCommand { get; }
+    public IAsyncRelayCommand RemoveChatCommand { get; }
+    public IAsyncRelayCommand SaveHeartbeatCommand { get; }
+    public IAsyncRelayCommand RemoveHeartbeatCommand { get; }
+    public IAsyncRelayCommand SaveOptionsCommand { get; }
     public IAsyncRelayCommand TestNotificationCommand { get; }
-    public IAsyncRelayCommand ClearNotificationsCommand { get; }
     public IAsyncRelayCommand RefreshServiceCommand { get; }
     public IAsyncRelayCommand InstallServiceCommand { get; }
     public IAsyncRelayCommand StartServiceCommand { get; }
@@ -74,14 +109,7 @@ public partial class SettingsViewModel : ObservableObject
             var config = await _settingsService.GetAsync(token).ConfigureAwait(true);
             DefaultEmail = config.DefaultEmail ?? string.Empty;
             RenewalThresholdDays = config.RenewalThresholdDays;
-            NotifyOnSuccess = config.Notifications.NotifyOnSuccess;
-            if (config.Notifications.Smtp is { } smtp)
-            {
-                SmtpHost = smtp.Host; SmtpPort = smtp.Port; SmtpTls = smtp.EnableSsl;
-                SmtpUsername = smtp.Username ?? string.Empty; SmtpFrom = smtp.From; SmtpTo = smtp.To;
-            }
-            NotificationStatus = $"SMTP: {(config.Notifications.Smtp is null ? "off" : "configured")}; " +
-                                 $"Webhook: {(config.Notifications.Webhook is null ? "off" : "configured")}";
+            await LoadNotificationsAsync(token).ConfigureAwait(true);
             await RefreshServiceCoreAsync(token).ConfigureAwait(true);
         }, CancellationToken.None);
     }
@@ -89,6 +117,41 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnIsBusyChanged(bool value)
     {
         foreach (var command in AllCommands()) command.NotifyCanExecuteChanged();
+    }
+
+    // A preset only fills in defaults; every field stays editable because organisations differ.
+    partial void OnSelectedPresetChanged(EmailPreset? value)
+    {
+        OnPropertyChanged(nameof(PresetHint));
+        if (value is null) return;
+        if (value.Host is not null) EmailHost = value.Host;
+        EmailPort = value.Port;
+        EmailSecurity = value.Security;
+        EmailAuthentication = value.Authentication;
+        if (value.DefaultUsername is not null) EmailUsername = value.DefaultUsername;
+    }
+
+    private async Task LoadNotificationsAsync(CancellationToken token)
+    {
+        var overview = await _notificationSettingsService.GetOverviewAsync(token).ConfigureAwait(true);
+        if (overview.Email is { } email)
+        {
+            EmailHost = email.Host; EmailPort = email.Port; EmailSecurity = email.Security;
+            EmailAuthentication = email.Authentication; EmailUsername = email.Username ?? string.Empty;
+            EmailFrom = email.From; EmailTo = string.Join(", ", email.To);
+            EmailStatus = $"Sending through {email.Host}:{email.Port}" +
+                          (email.Authentication == SmtpAuthentication.None ? " without sign-in." : $" as {email.Username}.");
+        }
+        else
+        {
+            EmailStatus = "Not configured.";
+        }
+
+        ChatChannels.Clear();
+        foreach (var chat in overview.Chat) ChatChannels.Add(chat);
+        HeartbeatStatus = overview.HeartbeatHost is { } host ? $"Pinging {host} after every healthy hourly check." : "Not configured.";
+        EventLogEnabled = overview.EventLogEnabled;
+        NotifyOnSuccess = overview.NotifyOnSuccess;
     }
 
     private AsyncRelayCommand Command(Func<CancellationToken, Task> action) => new(action, () => !IsBusy);
@@ -99,39 +162,46 @@ public partial class SettingsViewModel : ObservableObject
         ResultMessage = "General settings saved. Staging remains the default for new issuance.";
     }, token);
 
-    private Task SaveNotificationsAsync(CancellationToken token) => RunAsync(async ct =>
+    private Task SaveEmailAsync(CancellationToken token) => ChangeNotificationsAsync(ct => _notificationSettingsService.SetEmailAsync(
+            new EmailSettingsRequest(
+                EmailHost, EmailPort, EmailSecurity, EmailAuthentication,
+                string.IsNullOrWhiteSpace(EmailUsername) ? null : EmailUsername,
+                string.IsNullOrEmpty(EmailPassword) ? null : EmailPassword,
+                EmailFrom,
+                EmailTo.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)),
+            ct),
+        "Email settings saved. Use Send test to check delivery.", token);
+
+    private Task AddChatAsync(CancellationToken token) => ChangeNotificationsAsync(ct => _notificationSettingsService.AddChatAsync(
+            new ChatSettingsRequest(NewChatFormat, NewChatUrl, NewChatName), ct),
+        $"{NewChatFormat} channel added. Use Send test to check delivery.", token);
+
+    private Task RemoveChatAsync(CancellationToken token) => SelectedChat is { } chat
+        ? ChangeNotificationsAsync(ct => _notificationSettingsService.RemoveChatAsync(chat.Number, ct), $"{chat.Format} channel removed.", token)
+        : RunAsync(_ =>
+        {
+            ErrorMessage = "Select a chat channel to remove.";
+            return Task.CompletedTask;
+        }, token);
+
+    private Task ChangeNotificationsAsync(Func<CancellationToken, Task> change, string message, CancellationToken token) => RunAsync(async ct =>
     {
-        SmtpSettingsRequest? smtp = string.IsNullOrWhiteSpace(SmtpHost) ? null : new(
-            SmtpHost, SmtpPort, SmtpTls,
-            string.IsNullOrWhiteSpace(SmtpUsername) ? null : SmtpUsername,
-            string.IsNullOrWhiteSpace(SmtpUsername) || string.IsNullOrEmpty(SmtpPassword) ? null : SmtpPassword,
-            SmtpFrom, SmtpTo);
-        await _notificationSettingsService.ConfigureAsync(
-            new NotificationSettingsRequest(
-                smtp,
-                string.IsNullOrWhiteSpace(WebhookUrl) ? null : WebhookUrl,
-                NotifyOnSuccess,
-                PreserveExistingSmtpPassword: true,
-                PreserveExistingWebhook: true), ct)
-            .ConfigureAwait(true);
-        SmtpPassword = string.Empty; WebhookUrl = string.Empty;
-        ResultMessage = "Notification settings saved with DPAPI protection.";
-        await InitializeAsync().ConfigureAwait(true);
+        await change(ct).ConfigureAwait(true);
+
+        // Secrets are cleared from memory as soon as they are saved.
+        EmailPassword = string.Empty; NewChatUrl = string.Empty; NewChatName = string.Empty; HeartbeatUrl = string.Empty;
+        await LoadNotificationsAsync(ct).ConfigureAwait(true);
+        ResultMessage = message;
     }, token);
 
     private Task TestNotificationAsync(CancellationToken token) => RunAsync(async ct =>
     {
-        await _notifier.NotifyAsync(new NotificationMessage(
-            NotificationKind.Test, "SSLense test notification", "SSLense notification delivery is configured correctly."), ct)
-            .ConfigureAwait(true);
-        ResultMessage = "Test notification sent.";
-    }, token);
-
-    private Task ClearNotificationsAsync(CancellationToken token) => RunAsync(async ct =>
-    {
-        await _notificationSettingsService.ClearAsync(ct).ConfigureAwait(true);
-        ResultMessage = "Notification settings cleared.";
-        NotificationStatus = "Not configured";
+        TestResults.Clear();
+        var results = await _notifier.TestAsync(ct).ConfigureAwait(true);
+        foreach (var result in results) TestResults.Add(result);
+        var failed = results.Count(result => !result.Succeeded);
+        ResultMessage = failed == 0 ? $"Test delivered through {results.Count} channel(s)." : string.Empty;
+        ErrorMessage = failed == 0 ? null : $"{failed} of {results.Count} channel(s) failed; see the results below.";
     }, token);
 
     private Task RefreshServiceAsync(CancellationToken token) => RunAsync(RefreshServiceCoreAsync, token);
@@ -150,7 +220,7 @@ public partial class SettingsViewModel : ObservableObject
 
     private async Task RunAsync(Func<CancellationToken, Task> action, CancellationToken token)
     {
-        IsBusy = true; ErrorMessage = null;
+        IsBusy = true; ErrorMessage = null; ResultMessage = string.Empty;
         try { await action(token).ConfigureAwait(true); }
         catch (Exception exception)
         {
@@ -161,8 +231,9 @@ public partial class SettingsViewModel : ObservableObject
 
     private IEnumerable<AsyncRelayCommand> AllCommands() =>
     [
-        (AsyncRelayCommand)SaveGeneralCommand, (AsyncRelayCommand)SaveNotificationsCommand,
-        (AsyncRelayCommand)TestNotificationCommand, (AsyncRelayCommand)ClearNotificationsCommand,
+        (AsyncRelayCommand)SaveGeneralCommand, (AsyncRelayCommand)SaveEmailCommand, (AsyncRelayCommand)RemoveEmailCommand,
+        (AsyncRelayCommand)AddChatCommand, (AsyncRelayCommand)RemoveChatCommand, (AsyncRelayCommand)SaveHeartbeatCommand,
+        (AsyncRelayCommand)RemoveHeartbeatCommand, (AsyncRelayCommand)SaveOptionsCommand, (AsyncRelayCommand)TestNotificationCommand,
         (AsyncRelayCommand)RefreshServiceCommand, (AsyncRelayCommand)InstallServiceCommand,
         (AsyncRelayCommand)StartServiceCommand, (AsyncRelayCommand)StopServiceCommand,
         (AsyncRelayCommand)UninstallServiceCommand

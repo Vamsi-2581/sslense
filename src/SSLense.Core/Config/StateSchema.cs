@@ -9,8 +9,11 @@ internal static class StateSchema
     /// <summary>Version 0 was a bare JSON array; version 1 wraps it with a version and adds record IDs.</summary>
     public const int ManagedCertificates = 1;
 
-    /// <summary>Version 0 had no version field.</summary>
-    public const int Config = 1;
+    /// <summary>
+    /// Version 0 had no version field. Version 2 replaced the single SMTP server and generic webhook with
+    /// email, chat channels, a heartbeat, and the Event Log (see <see cref="ConfigMigrations"/>).
+    /// </summary>
+    public const int Config = 2;
 
     public const int Transactions = 1;
 

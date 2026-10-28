@@ -14,6 +14,7 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
     // Realistic secrets planted in every input; none may appear anywhere in the bundle.
     private const string SmtpPassword = "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAProtectedSmtpPasswordBlobValue==";
     private const string WebhookUrl = "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAProtectedWebhookUrlBlobValue12==";
+    private const string HeartbeatUrl = "AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAProtectedHeartbeatUrlBlobValue=";
     private const string LoggedPassword = "Hunter2Secret!";
     private const string LoggedWebhookToken = "XXXXWEBHOOKSECRETXXXX";
     private const string LoggedBearer = "eyJhbGciOi.eyJzdWIiOi.SflKxwRJSM";
@@ -36,7 +37,7 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
         var everything = string.Join("\n", entries.Values);
         foreach (var secret in new[]
                  {
-                     SmtpPassword, WebhookUrl, LoggedPassword, LoggedWebhookToken, LoggedBearer, PrivateKeyBody,
+                     SmtpPassword, WebhookUrl, HeartbeatUrl, LoggedPassword, LoggedWebhookToken, LoggedBearer, PrivateKeyBody,
                      AccountEmail, "smtp-user@example.com", "alerts@example.com"
                  })
         {
@@ -98,9 +99,11 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
             DefaultEmail = AccountEmail,
             Notifications = new NotificationConfig
             {
-                Smtp = new SmtpNotificationConfig(
-                    "smtp.example.com", 587, true, "smtp-user@example.com", SmtpPassword, "alerts@example.com", AccountEmail),
-                Webhook = new WebhookNotificationConfig(WebhookUrl)
+                Email = new EmailNotificationConfig(
+                    "smtp.example.com", 587, SmtpSecurity.StartTls, SmtpAuthentication.Password,
+                    "smtp-user@example.com", SmtpPassword, "alerts@example.com", [AccountEmail]),
+                Chat = [new ChatNotificationConfig(ChatFormat.Teams, WebhookUrl, "ops")],
+                Heartbeat = new HeartbeatNotificationConfig(HeartbeatUrl)
             }
         };
 

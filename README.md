@@ -118,33 +118,76 @@ SSLense removes an old certificate only after the replacement binding is confirm
 
 ## Notifications
 
-SMTP and webhook channels may be enabled together or independently. SMTP passwords and webhook URLs are encrypted using Windows DPAPI with `LocalMachine` scope. They are never written to logs or displayed by the CLI.
+SSLense sends renewal failures, expiry warnings, and (optionally) successful renewals. Every organisation's mail and chat setup differs, so channels can be combined freely; configure them under **Settings** in the GUI or with `SSLense.Cli notifications`. Passwords and URLs are encrypted with DPAPI, typed without echo, and never logged or displayed; only their host names are shown.
 
-Configure authenticated SMTP; the password is requested without echoing it:
+| Channel | Setup | Notes |
+|---|---|---|
+| **Windows Event Log** | None; on by default | Application log, source `SSLense`. Lets existing monitoring (Azure Monitor, SCOM, Zabbix, PRTG, and others) watch SSLense |
+| **Email** | Any SMTP server or relay | No sign-in (relay by IP address) or username and password; STARTTLS, TLS on connect (465), or plain text for internal relays only |
+| **Microsoft Teams, Slack, Discord, Telegram** | Paste a webhook URL | Sent in each service's native format |
+| **ntfy** | Paste a topic URL | Free push notifications to the ntfy phone app, no account needed |
+| **Generic webhook** | Paste a URL | JSON with `kind`, `severity`, `subject`, `body`, and `occurredAtUtc` |
+| **Heartbeat** | Paste a ping URL | healthchecks.io, Uptime Kuma, and similar; see below |
 
-```powershell
-dotnet run --project .\src\SSLense.Cli -- notifications configure `
-  --smtp-host smtp.example.com `
-  --smtp-port 587 `
-  --smtp-user sslense@example.com `
-  --smtp-from sslense@example.com `
-  --smtp-to admin@example.com
-```
+### Email
 
-Configure a webhook; its URL is requested without echoing it:
-
-```powershell
-dotnet run --project .\src\SSLense.Cli -- notifications configure --webhook
-```
-
-Pass both SMTP options and `--webhook` in one command to enable both channels. Add `--notify-success` to receive successful-renewal messages. Renewal failures and 14-day expiry warnings are always sent when a channel is configured.
-
-Test or remove the configuration:
+Presets fill in common settings, which can all be changed: `m365-relay`, `m365`, `gmail`, `sendgrid`, `exchange`, and `custom`.
 
 ```powershell
-dotnet run --project .\src\SSLense.Cli -- notifications test
-dotnet run --project .\src\SSLense.Cli -- notifications clear
+# Microsoft 365 relay that accepts mail by this server's IP address (inbound connector), no sign-in:
+SSLense.Cli notifications email --preset m365-relay --host contoso-com.mail.protection.outlook.com `
+  --from alerts@contoso.com --to ops@contoso.com,admin@contoso.com
+
+# A server that needs a login; the password is prompted:
+SSLense.Cli notifications email --host smtp.example.com --port 587 --auth password --user sslense@example.com `
+  --from sslense@example.com --to admin@example.com
 ```
+
+`--security auto` (the default) uses TLS on connect for port 465 and requires STARTTLS on any other port; it never silently falls back to plain text. Use `--security none` only for an internal relay on a trusted network. Sending a password without encryption is refused.
+
+### Chat and push
+
+```powershell
+SSLense.Cli notifications chat --type teams --name ops      # URL prompted
+SSLense.Cli notifications chat --type ntfy                  # for example https://ntfy.sh/your-secret-topic
+```
+
+- **Teams:** in the channel, create a Workflows flow from the template *Post to a channel when a webhook request is received* and use its URL. SSLense sends an Adaptive Card.
+- **Telegram:** `https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>`.
+- **ntfy:** choose a topic name that is hard to guess, since anyone who knows it can read it on the public server.
+
+### Heartbeat
+
+```powershell
+SSLense.Cli notifications heartbeat    # URL prompted
+```
+
+The service pings the URL after every **healthy** hourly check. The pings stop when the server or service stops, or while renewals keep failing, so the monitoring service alerts you in either case, even with no other channel configured. Set the check to expect a ping every hour with a grace period of two to three hours.
+
+### Event Log IDs
+
+| Event ID | Level | Meaning |
+|---|---|---|
+| 1000 | Information | Certificate renewed |
+| 1001 | Error | Renewal failed (sent on the third consecutive failure, then about daily) |
+| 1002 | Warning | Certificate expires soon |
+| 1003 | Error | Certificate expires very soon, or has expired |
+| 1900 | Information | Test notification |
+
+These IDs are stable across releases. Successful renewals are always recorded in the Event Log; `--notify-success on` also sends them to email and chat.
+
+### Managing channels
+
+```powershell
+SSLense.Cli notifications show                                       # what is configured
+SSLense.Cli notifications test                                       # test each channel, PASS or FAIL per channel
+SSLense.Cli notifications options --event-log on --notify-success off
+SSLense.Cli notifications remove --chat 2                            # or --email
+SSLense.Cli notifications heartbeat --remove
+SSLense.Cli notifications clear                                      # remove every channel; the Event Log stays on
+```
+
+Settings from earlier versions (one SMTP server and one webhook) are migrated automatically; the original `config.json` is kept as `config.json.v1.bak`.
 
 ## Windows Service
 

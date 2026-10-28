@@ -290,49 +290,7 @@ static RootCommand CreateRootCommand(IServiceProvider services)
         rootCommand.Subcommands.Add(command);
     }
 
-    var notificationsCommand = new Command("notifications", "Configure and test renewal notifications.");
-    var smtpHostOption = new Option<string?>("--smtp-host") { Description = "SMTP server host name." };
-    var smtpPortOption = new Option<int?>("--smtp-port") { Description = "SMTP port (default: 587)." };
-    var smtpUserOption = new Option<string?>("--smtp-user") { Description = "SMTP username. Password is prompted securely." };
-    var smtpFromOption = new Option<string?>("--smtp-from") { Description = "SMTP sender address." };
-    var smtpToOption = new Option<string?>("--smtp-to") { Description = "SMTP recipient address." };
-    var smtpNoTlsOption = new Option<bool>("--smtp-no-tls") { Description = "Disable SMTP TLS." };
-    var webhookOption = new Option<bool>("--webhook") { Description = "Prompt securely for a webhook URL." };
-    var notifySuccessOption = new Option<bool>("--notify-success") { Description = "Send optional successful-renewal notifications." };
-    var configureNotificationsCommand = new Command("configure", "Replace notification settings. Secrets are protected with DPAPI.");
-    configureNotificationsCommand.Options.Add(smtpHostOption);
-    configureNotificationsCommand.Options.Add(smtpPortOption);
-    configureNotificationsCommand.Options.Add(smtpUserOption);
-    configureNotificationsCommand.Options.Add(smtpFromOption);
-    configureNotificationsCommand.Options.Add(smtpToOption);
-    configureNotificationsCommand.Options.Add(smtpNoTlsOption);
-    configureNotificationsCommand.Options.Add(webhookOption);
-    configureNotificationsCommand.Options.Add(notifySuccessOption);
-    configureNotificationsCommand.SetAction((parseResult, cancellationToken) => ConfigureNotificationsAsync(
-        services.GetRequiredService<INotificationSettingsService>(),
-        parseResult.GetValue(smtpHostOption),
-        parseResult.GetValue(smtpPortOption),
-        parseResult.GetValue(smtpUserOption),
-        parseResult.GetValue(smtpFromOption),
-        parseResult.GetValue(smtpToOption),
-        parseResult.GetValue(smtpNoTlsOption),
-        parseResult.GetValue(webhookOption),
-        parseResult.GetValue(notifySuccessOption),
-        cancellationToken));
-    notificationsCommand.Subcommands.Add(configureNotificationsCommand);
-
-    var testNotificationsCommand = new Command("test", "Send a test through every configured notification channel.");
-    testNotificationsCommand.SetAction((_, cancellationToken) => TestNotificationsAsync(
-        services.GetRequiredService<INotifier>(),
-        cancellationToken));
-    notificationsCommand.Subcommands.Add(testNotificationsCommand);
-
-    var clearNotificationsCommand = new Command("clear", "Remove all saved notification settings.");
-    clearNotificationsCommand.SetAction((_, cancellationToken) => ClearNotificationsAsync(
-        services.GetRequiredService<INotificationSettingsService>(),
-        cancellationToken));
-    notificationsCommand.Subcommands.Add(clearNotificationsCommand);
-    rootCommand.Subcommands.Add(notificationsCommand);
+    rootCommand.Subcommands.Add(CreateNotificationsCommand(services));
 
     return rootCommand;
 }
@@ -386,52 +344,275 @@ static async Task<int> ServiceActionAsync(IWindowsServiceManager service, string
     catch (Exception exception) { Log.Error(exception, "Service action {Action} failed", action); Console.Error.WriteLine($"Error: {exception.Message}"); return 1; }
 }
 
-static async Task<int> ConfigureNotificationsAsync(
-    INotificationSettingsService settingsService,
-    string? smtpHost,
-    int? smtpPort,
-    string? smtpUser,
-    string? smtpFrom,
-    string? smtpTo,
-    bool smtpNoTls,
-    bool configureWebhook,
-    bool notifySuccess,
-    CancellationToken cancellationToken)
+static Command CreateNotificationsCommand(IServiceProvider services)
+{
+    INotificationSettingsService Settings() => services.GetRequiredService<INotificationSettingsService>();
+    var command = new Command(
+        "notifications",
+        "Configure where SSLense sends alerts: email, Teams, Slack, Discord, Telegram, ntfy, a heartbeat, and the Windows Event Log.");
+
+    var showCommand = new Command("show", "List the configured notification channels.");
+    showCommand.SetAction((_, token) => ShowNotificationsAsync(Settings(), token));
+    command.Subcommands.Add(showCommand);
+
+    var presetOption = new Option<string?>("--preset")
+    {
+        Description = "Start from a common setup: " + string.Join(", ", EmailPreset.All.Select(preset => preset.Id)) + "."
+    };
+    presetOption.AcceptOnlyFromAmong([.. EmailPreset.All.Select(preset => preset.Id)]);
+    var hostOption = new Option<string?>("--host") { Description = "SMTP server or relay host name." };
+    var portOption = new Option<int?>("--port") { Description = "SMTP port (25, 587, or 465)." };
+    var securityOption = new Option<string?>("--security") { Description = "auto (default), starttls, ssl (TLS on connect, port 465), or none." };
+    securityOption.AcceptOnlyFromAmong("auto", "starttls", "ssl", "none");
+    var authOption = new Option<string?>("--auth") { Description = "none (relay by IP address) or password. The password is prompted." };
+    authOption.AcceptOnlyFromAmong("none", "password");
+    var userOption = new Option<string?>("--user") { Description = "SMTP username, with --auth password." };
+    var fromOption = new Option<string>("--from") { Required = true, Description = "Sender address." };
+    var toOption = new Option<string>("--to") { Required = true, Description = "Recipient addresses, comma-separated." };
+    var emailCommand = new Command("email", "Send alerts by email through any SMTP server or relay.");
+    foreach (var option in new Option[] { presetOption, hostOption, portOption, securityOption, authOption, userOption, fromOption, toOption })
+    {
+        emailCommand.Options.Add(option);
+    }
+
+    emailCommand.SetAction((parseResult, token) => ConfigureEmailAsync(
+        Settings(),
+        parseResult.GetValue(presetOption),
+        parseResult.GetValue(hostOption),
+        parseResult.GetValue(portOption),
+        parseResult.GetValue(securityOption),
+        parseResult.GetValue(authOption),
+        parseResult.GetValue(userOption),
+        parseResult.GetRequiredValue(fromOption),
+        parseResult.GetRequiredValue(toOption),
+        token));
+    command.Subcommands.Add(emailCommand);
+
+    var typeOption = new Option<string>("--type") { Required = true, Description = "teams, slack, discord, telegram, ntfy, or generic." };
+    typeOption.AcceptOnlyFromAmong("teams", "slack", "discord", "telegram", "ntfy", "generic");
+    var nameOption = new Option<string?>("--name") { Description = "Optional label, to tell several channels apart." };
+    var chatCommand = new Command("chat", "Add a chat or push channel. The webhook URL is prompted without echo.");
+    chatCommand.Options.Add(typeOption);
+    chatCommand.Options.Add(nameOption);
+    chatCommand.SetAction((parseResult, token) => AddChatAsync(
+        Settings(), parseResult.GetRequiredValue(typeOption), parseResult.GetValue(nameOption), token));
+    command.Subcommands.Add(chatCommand);
+
+    var heartbeatRemoveOption = new Option<bool>("--remove") { Description = "Stop pinging the heartbeat URL." };
+    var heartbeatCommand = new Command(
+        "heartbeat",
+        "Ping a monitoring URL (healthchecks.io, Uptime Kuma, and similar) after every healthy hourly check. The URL is prompted.");
+    heartbeatCommand.Options.Add(heartbeatRemoveOption);
+    heartbeatCommand.SetAction((parseResult, token) => ConfigureHeartbeatAsync(
+        Settings(), parseResult.GetValue(heartbeatRemoveOption), token));
+    command.Subcommands.Add(heartbeatCommand);
+
+    var eventLogOption = new Option<string?>("--event-log") { Description = "on or off: write alerts to the Windows Application event log." };
+    eventLogOption.AcceptOnlyFromAmong("on", "off");
+    var successOption = new Option<string?>("--notify-success") { Description = "on or off: also send successful renewals to email and chat." };
+    successOption.AcceptOnlyFromAmong("on", "off");
+    var optionsCommand = new Command("options", "Turn the Event Log and success notifications on or off.");
+    optionsCommand.Options.Add(eventLogOption);
+    optionsCommand.Options.Add(successOption);
+    optionsCommand.SetAction((parseResult, token) => ConfigureNotificationOptionsAsync(
+        Settings(), parseResult.GetValue(eventLogOption), parseResult.GetValue(successOption), token));
+    command.Subcommands.Add(optionsCommand);
+
+    var removeEmailOption = new Option<bool>("--email") { Description = "Remove the email settings." };
+    var removeChatOption = new Option<int?>("--chat") { Description = "Remove chat channel N, as numbered by 'notifications show'." };
+    var removeCommand = new Command("remove", "Remove the email settings or one chat channel.");
+    removeCommand.Options.Add(removeEmailOption);
+    removeCommand.Options.Add(removeChatOption);
+    removeCommand.SetAction((parseResult, token) => RemoveNotificationChannelAsync(
+        Settings(), parseResult.GetValue(removeEmailOption), parseResult.GetValue(removeChatOption), token));
+    command.Subcommands.Add(removeCommand);
+
+    var testCommand = new Command("test", "Send a test through every channel and report each result.");
+    testCommand.SetAction((_, token) => TestNotificationsAsync(services.GetRequiredService<INotifier>(), token));
+    command.Subcommands.Add(testCommand);
+
+    var clearCommand = new Command("clear", "Remove every notification channel. The Event Log stays on.");
+    clearCommand.SetAction((_, token) => RunNotificationChangeAsync(
+        () => Settings().ClearAsync(token), "All notification channels were removed. The Windows Event Log stays on."));
+    command.Subcommands.Add(clearCommand);
+    return command;
+}
+
+static async Task<int> ShowNotificationsAsync(INotificationSettingsService settings, CancellationToken token)
 {
     try
     {
-        SmtpSettingsRequest? smtp = null;
-        if (!string.IsNullOrWhiteSpace(smtpHost))
+        var overview = await settings.GetOverviewAsync(token).ConfigureAwait(false);
+        Console.WriteLine($"Windows Event Log: {(overview.EventLogEnabled ? "on (source SSLense)" : "off")}");
+        Console.WriteLine($"Successful renewals to email and chat: {(overview.NotifyOnSuccess ? "on" : "off")}");
+        if (overview.Email is { } email)
         {
-            if (string.IsNullOrWhiteSpace(smtpFrom) || string.IsNullOrWhiteSpace(smtpTo))
-            {
-                throw new ArgumentException("--smtp-from and --smtp-to are required with --smtp-host.");
-            }
-
-            var password = string.IsNullOrWhiteSpace(smtpUser)
-                ? null
-                : ReadHiddenValue("SMTP password: ");
-            smtp = new SmtpSettingsRequest(
-                smtpHost,
-                smtpPort ?? 587,
-                !smtpNoTls,
-                smtpUser,
-                password,
-                smtpFrom,
-                smtpTo);
+            var signIn = email.Authentication == SmtpAuthentication.None ? "no sign-in" : $"sign-in as {email.Username}";
+            Console.WriteLine($"Email: {email.Host}:{email.Port}, {email.Security}, {signIn}, from {email.From} to {string.Join(", ", email.To)}");
+        }
+        else
+        {
+            Console.WriteLine("Email: not configured");
         }
 
-        var webhookUrl = configureWebhook ? ReadHiddenValue("Webhook URL: ") : null;
-        await settingsService.ConfigureAsync(
-                new NotificationSettingsRequest(smtp, webhookUrl, notifySuccess),
-                cancellationToken)
-            .ConfigureAwait(false);
-        Console.WriteLine("Notification settings saved. Passwords and webhook URLs are DPAPI-protected.");
+        if (overview.Chat.Count == 0)
+        {
+            Console.WriteLine("Chat: none");
+        }
+
+        foreach (var chat in overview.Chat)
+        {
+            var label = string.IsNullOrWhiteSpace(chat.Name) ? string.Empty : $" \"{chat.Name}\"";
+            Console.WriteLine($"Chat {chat.Number}: {chat.Format}{label} ({chat.Host})");
+        }
+
+        Console.WriteLine($"Heartbeat: {(overview.HeartbeatHost is { } host ? $"pinging {host}" : "not configured")}");
         return 0;
     }
     catch (Exception exception)
     {
-        Log.Error(exception, "Failed to configure notifications");
+        Log.Error(exception, "Failed to read notification settings");
+        Console.Error.WriteLine($"Error: {exception.Message}");
+        return 1;
+    }
+}
+
+static async Task<int> ConfigureEmailAsync(
+    INotificationSettingsService settings,
+    string? presetId,
+    string? host,
+    int? port,
+    string? security,
+    string? authentication,
+    string? user,
+    string from,
+    string to,
+    CancellationToken token)
+{
+    var preset = presetId is null ? null : EmailPreset.Find(presetId);
+    var resolvedHost = host ?? preset?.Host;
+    if (string.IsNullOrWhiteSpace(resolvedHost))
+    {
+        Console.Error.WriteLine(preset is null
+            ? "Error: --host is required."
+            : $"Error: --host is required for this preset. {preset.Hint}");
+        return 1;
+    }
+
+    var resolvedAuthentication = authentication switch
+    {
+        "none" => SmtpAuthentication.None,
+        "password" => SmtpAuthentication.Password,
+        _ => preset?.Authentication ?? (user is null ? SmtpAuthentication.None : SmtpAuthentication.Password)
+    };
+    var password = resolvedAuthentication == SmtpAuthentication.Password
+        ? ReadHiddenValue("SMTP password (leave empty to keep the saved one): ")
+        : null;
+    return await RunNotificationChangeAsync(
+            () => settings.SetEmailAsync(
+                new EmailSettingsRequest(
+                    resolvedHost,
+                    port ?? preset?.Port ?? 587,
+                    security switch
+                    {
+                        "starttls" => SmtpSecurity.StartTls,
+                        "ssl" => SmtpSecurity.SslOnConnect,
+                        "none" => SmtpSecurity.None,
+                        "auto" => SmtpSecurity.Auto,
+                        _ => preset?.Security ?? SmtpSecurity.Auto
+                    },
+                    resolvedAuthentication,
+                    user ?? preset?.DefaultUsername,
+                    string.IsNullOrEmpty(password) ? null : password,
+                    from,
+                    to.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)),
+                token),
+            "Email settings saved. Run 'SSLense.Cli notifications test' to send a test message.")
+        .ConfigureAwait(false);
+}
+
+static Task<int> AddChatAsync(INotificationSettingsService settings, string type, string? name, CancellationToken token)
+{
+    var format = Enum.Parse<ChatFormat>(type, ignoreCase: true);
+    var url = ReadHiddenValue(format switch
+    {
+        ChatFormat.Teams => "Teams workflow webhook URL: ",
+        ChatFormat.Telegram => "Telegram URL (https://api.telegram.org/bot<token>/sendMessage?chat_id=<id>): ",
+        ChatFormat.Ntfy => "ntfy topic URL (for example https://ntfy.sh/<your-topic>): ",
+        _ => $"{format} webhook URL: "
+    });
+    return RunNotificationChangeAsync(
+        () => settings.AddChatAsync(new ChatSettingsRequest(format, url, name), token),
+        $"{format} channel added. Run 'SSLense.Cli notifications test' to send a test message.");
+}
+
+static Task<int> ConfigureHeartbeatAsync(INotificationSettingsService settings, bool remove, CancellationToken token) =>
+    remove
+        ? RunNotificationChangeAsync(() => settings.SetHeartbeatAsync(null, token), "Heartbeat removed.")
+        : RunNotificationChangeAsync(
+            () => settings.SetHeartbeatAsync(ReadHiddenValue("Heartbeat URL: "), token),
+            "Heartbeat saved. The service pings it after every healthy hourly check; set your monitor to expect a ping " +
+            "every hour with a grace period of two to three hours.");
+
+static async Task<int> ConfigureNotificationOptionsAsync(
+    INotificationSettingsService settings,
+    string? eventLog,
+    string? notifySuccess,
+    CancellationToken token)
+{
+    if (eventLog is null && notifySuccess is null)
+    {
+        Console.Error.WriteLine("Error: specify --event-log and/or --notify-success.");
+        return 1;
+    }
+
+    try
+    {
+        var current = await settings.GetOverviewAsync(token).ConfigureAwait(false);
+        return await RunNotificationChangeAsync(
+                () => settings.SetOptionsAsync(
+                    eventLog is null ? current.EventLogEnabled : eventLog == "on",
+                    notifySuccess is null ? current.NotifyOnSuccess : notifySuccess == "on",
+                    token),
+                "Notification options saved.")
+            .ConfigureAwait(false);
+    }
+    catch (Exception exception)
+    {
+        Log.Error(exception, "Failed to update notification options");
+        Console.Error.WriteLine($"Error: {exception.Message}");
+        return 1;
+    }
+}
+
+static Task<int> RemoveNotificationChannelAsync(
+    INotificationSettingsService settings,
+    bool email,
+    int? chat,
+    CancellationToken token)
+{
+    if (email == chat.HasValue)
+    {
+        Console.Error.WriteLine("Error: specify exactly one of --email or --chat <number>.");
+        return Task.FromResult(1);
+    }
+
+    return email
+        ? RunNotificationChangeAsync(() => settings.RemoveEmailAsync(token), "Email settings removed.")
+        : RunNotificationChangeAsync(() => settings.RemoveChatAsync(chat!.Value, token), $"Chat channel {chat} removed.");
+}
+
+static async Task<int> RunNotificationChangeAsync(Func<Task> change, string successMessage)
+{
+    try
+    {
+        await change().ConfigureAwait(false);
+        Console.WriteLine(successMessage);
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        Log.Error(exception, "Failed to update notification settings");
         Console.Error.WriteLine($"Error: {exception.Message}");
         return 1;
     }
@@ -441,37 +622,17 @@ static async Task<int> TestNotificationsAsync(INotifier notifier, CancellationTo
 {
     try
     {
-        await notifier.NotifyAsync(
-                new NotificationMessage(
-                    NotificationKind.Test,
-                    "SSLense test notification",
-                    "SSLense notification delivery is configured correctly."),
-                cancellationToken)
-            .ConfigureAwait(false);
-        Console.WriteLine("Test notification sent through every configured channel.");
-        return 0;
+        var results = await notifier.TestAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var result in results)
+        {
+            Console.WriteLine($"[{(result.Succeeded ? "PASS" : "FAIL")}] {result.Channel}: {result.Message}");
+        }
+
+        return results.All(result => result.Succeeded) ? 0 : 1;
     }
     catch (Exception exception)
     {
         Log.Error(exception, "Test notification failed");
-        Console.Error.WriteLine($"Error: {FormatExceptionMessages(exception)}");
-        return 1;
-    }
-}
-
-static async Task<int> ClearNotificationsAsync(
-    INotificationSettingsService settingsService,
-    CancellationToken cancellationToken)
-{
-    try
-    {
-        await settingsService.ClearAsync(cancellationToken).ConfigureAwait(false);
-        Console.WriteLine("Notification settings cleared.");
-        return 0;
-    }
-    catch (Exception exception)
-    {
-        Log.Error(exception, "Failed to clear notification settings");
         Console.Error.WriteLine($"Error: {exception.Message}");
         return 1;
     }
@@ -510,10 +671,6 @@ static string ReadHiddenValue(string prompt)
         }
     }
 }
-
-static string FormatExceptionMessages(Exception exception) => exception is AggregateException aggregate
-    ? string.Join(" ", aggregate.Flatten().InnerExceptions.Select(value => value.Message))
-    : exception.Message;
 
 static async Task<int> RenewAsync(
     IRenewalService renewalService,

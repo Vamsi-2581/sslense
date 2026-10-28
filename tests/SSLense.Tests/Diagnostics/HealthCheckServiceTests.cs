@@ -60,7 +60,7 @@ public sealed class HealthCheckServiceTests
         AssertStatus(results, "HTTPS bindings: My Site", HealthStatus.Fail, "renew");
         AssertStatus(results, "Expiry: My Site", HealthStatus.Fail, "renew");
         AssertStatus(results, "Renewal history: My Site", HealthStatus.Fail, "renew");
-        AssertStatus(results, "Notifications", HealthStatus.Warning, "notifications configure");
+        AssertStatus(results, "Notifications", HealthStatus.Warning, "SSLense.Cli notifications");
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class HealthCheckServiceTests
         certificate ??= Certificate();
         config ??= new AppConfig
         {
-            Notifications = new NotificationConfig { Webhook = new WebhookNotificationConfig("protected") }
+            Notifications = new NotificationConfig { Chat = [new ChatNotificationConfig(ChatFormat.Teams, "protected")] }
         };
         heartbeat ??= new ServiceHeartbeat("0.9.0", DateTimeOffset.UtcNow.AddHours(-3), LastCycleCompletedAt: DateTimeOffset.UtcNow.AddMinutes(-20), LastCycleSucceeded: true);
 

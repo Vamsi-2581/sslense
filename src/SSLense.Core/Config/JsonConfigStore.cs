@@ -6,7 +6,8 @@ public sealed class JsonConfigStore : IConfigStore
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
-        WriteIndented = true
+        WriteIndented = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
     };
 
     private readonly IFileSystem _fileSystem;
@@ -53,9 +54,12 @@ public sealed class JsonConfigStore : IConfigStore
             var config = JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions)
                 ?? throw new InvalidDataException($"Configuration file '{_configPath}' is empty.");
             StateSchema.EnsureSupported(config.SchemaVersion, StateSchema.Config, _configPath);
-            return config.Notifications is null
+            config = config.Notifications is null
                 ? config with { Notifications = new NotificationConfig() }
-                : config;
+                : config with { Notifications = config.Notifications with { Chat = config.Notifications.Chat ?? [] } };
+
+            // Migrated in memory; the file is rewritten (after a backup) the next time settings are saved.
+            return ConfigMigrations.Migrate(config);
         }
         catch (JsonException exception)
         {
