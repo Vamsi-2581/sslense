@@ -7,6 +7,7 @@ using SSLense.Core.Renewal;
 using SSLense.Core.WindowsServices;
 using SSLense.Core.Notifications;
 using SSLense.Core.Logs;
+using SSLense.Core.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace SSLense.Core;
@@ -46,6 +47,10 @@ public static class DependencyInjection
         services.AddTransient<IPreflightService, PreflightService>();
         services.AddTransient<ISettingsService, SettingsService>();
         services.AddTransient<ICertificateManagementService, CertificateManagementService>();
+        services.AddSingleton<IServiceHeartbeatStore, JsonServiceHeartbeatStore>();
+        services.AddSingleton<IHostResolver, DnsHostResolver>();
+        services.AddTransient<IHealthCheckService, HealthCheckService>();
+        services.AddTransient<IDiagnosticBundleService, DiagnosticBundleService>();
         return services;
     }
 }

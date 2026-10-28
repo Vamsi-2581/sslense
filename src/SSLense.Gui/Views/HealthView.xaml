@@ -1,0 +1,85 @@
+<UserControl x:Class="SSLense.Gui.Views.HealthView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Margin="0,0,0,18">
+            <StackPanel DockPanel.Dock="Left">
+                <TextBlock Text="Health" Style="{StaticResource PageTitle}" />
+                <TextBlock Text="Check that SSLense can renew your certificates, and create a diagnostic bundle for support."
+                           Style="{StaticResource PageSubtitle}" />
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Run health check" Command="{Binding RunCommand}" Style="{StaticResource PrimaryButton}" />
+            </StackPanel>
+        </DockPanel>
+
+        <Border Grid.Row="1" Style="{StaticResource InfoBanner}" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" ClipToBounds="True">
+            <DataGrid ItemsSource="{Binding Results}" AutomationProperties.Name="Health check results">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="70">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Result}" Value="WARN">
+                                        <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Result}" Value="FAIL">
+                                        <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Check" Binding="{Binding Name}" Width="1.1*" />
+                    <DataGridTextColumn Header="Details" Binding="{Binding Message}" Width="2*">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="TextWrapping" Value="Wrap" />
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="How to fix" Binding="{Binding Fix}" Width="1.5*">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="TextWrapping" Value="Wrap" />
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,14,0,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Left" MaxWidth="560">
+                    <TextBlock Text="Diagnostic bundle" Style="{StaticResource SectionTitle}" />
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,4,0,8"
+                               Text="Saves a zip to your Desktop with health results, settings, bindings, and recent logs to attach to a GitHub issue. Passwords, keys, protected values, and webhook URLs are removed automatically." />
+                    <CheckBox Content="Replace site and host names with placeholders (for public posts)"
+                              IsChecked="{Binding RedactHosts}" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Content="Show in folder" Command="{Binding ShowBundleCommand}" Margin="0,0,8,0" />
+                    <Button Content="Create bundle" Command="{Binding CreateBundleCommand}" Style="{StaticResource PrimaryButton}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -261,6 +261,27 @@ dotnet run --project .\src\SSLense.Cli -- check-permissions
 
 The service runs as LocalSystem. Running it under a different account would also require granting that account access to this folder.
 
+## Health check and diagnostics
+
+Run the health check first when something is wrong. It is read-only, apart from a probe file that the pre-flight check writes to each site's challenge folder and removes:
+
+```powershell
+SSLense.Cli health
+```
+
+It checks elevation, data-folder permissions, configuration and state files, interrupted operations, the renewal service and its heartbeat (the service records each hourly cycle), IIS, and, for every managed certificate, that it is installed with its private key, bound on port 443, not close to expiry, and renewing successfully. It then checks DNS, port 80 reachability, and the challenge folder for each host, outbound HTTPS to Let's Encrypt (a read-only request for the ACME directory of each environment in use), and whether a notification channel is configured. Each problem comes with a suggested fix. The exit code is 1 if any check failed and 0 otherwise, warnings included, so it can be used in monitoring scripts.
+
+To ask for help, create a diagnostic bundle and attach it to a GitHub issue:
+
+```powershell
+SSLense.Cli diagnostics                  # sslense-diagnostics-<timestamp>.zip in the current folder
+SSLense.Cli diagnostics --redact-hosts   # also replaces site and host names, for public posts
+```
+
+The bundle contains a system summary (SSLense, Windows, .NET, and IIS versions), the health check results, configuration, managed certificates, IIS sites and bindings, interrupted operations, the service heartbeat, and the three newest log files. It never contains private keys, ACME account keys, PFX files, SMTP passwords, webhook URLs, or DPAPI-protected values. Email addresses are masked, and URL paths and query strings are removed except for Let's Encrypt and HTTP-01 challenge URLs. Thumbprints are kept because they are public identifiers. Review the files before sharing them.
+
+The GUI's **Health** page runs the same checks and saves the bundle to your Desktop.
+
 ## Troubleshooting
 
 - **Access denied:** run PowerShell as Administrator.
@@ -277,7 +298,7 @@ Review the current daily log in `C:\ProgramData\SSLense\logs` for the full excep
 
 - **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md). Commits are signed off under the Developer Certificate of Origin.
 - **Security issues:** report them privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
-- **Bugs and questions:** open a GitHub issue. Redact host names, keys, passwords, and webhook URLs from any logs you attach.
+- **Bugs and questions:** open a GitHub issue with the output of `SSLense.Cli health` and a bundle from `SSLense.Cli diagnostics` (add `--redact-hosts` if your host names are private).
 
 ## License
 

@@ -7,6 +7,7 @@ using SSLense.Core.WindowsServices;
 using SSLense.Core.Notifications;
 using SSLense.Core.Certificates;
 using SSLense.Core.Validation;
+using SSLense.Core.Diagnostics;
 using SSLense.Cli;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -54,9 +55,10 @@ try
             return 1;
         }
 
-        // Permission commands only touch file ACLs; the installer runs secure-data and must not trigger
-        // certificate recovery as a side effect.
-        var touchesCertificates = parseResult.CommandResult.Command.Name is not ("check-permissions" or "secure-data");
+        // These commands must not change certificate state as a side effect: the installer runs secure-data,
+        // and health and diagnostics should report interrupted operations rather than resolve them first.
+        var touchesCertificates = parseResult.CommandResult.Command.Name is not
+            ("check-permissions" or "secure-data" or "health" or "diagnostics");
         var recovery = host.Services.GetRequiredService<ICertificateRecoveryService>();
         foreach (var result in touchesCertificates
                      ? await recovery.RecoverAsync().ConfigureAwait(false)
@@ -191,6 +193,33 @@ static RootCommand CreateRootCommand(IServiceProvider services)
         "Restrict the SSLense data directory to Administrators and SYSTEM. Run by the installer.");
     secureDataCommand.SetAction(_ => SecureData());
     rootCommand.Subcommands.Add(secureDataCommand);
+
+    var healthCommand = new Command(
+        "health",
+        "Check the service, permissions, IIS, certificates, DNS, port 80, and Let's Encrypt connectivity.");
+    healthCommand.SetAction((_, cancellationToken) =>
+        HealthAsync(services.GetRequiredService<IHealthCheckService>(), cancellationToken));
+    rootCommand.Subcommands.Add(healthCommand);
+
+    var diagnosticsOutputOption = new Option<string?>("--output")
+    {
+        Description = "Zip file to create (default: sslense-diagnostics-<timestamp>.zip in the current folder)."
+    };
+    var diagnosticsRedactHostsOption = new Option<bool>("--redact-hosts")
+    {
+        Description = "Replace site and host names with placeholders, for posting the bundle publicly."
+    };
+    var diagnosticsCommand = new Command(
+        "diagnostics",
+        "Create a redacted diagnostic bundle to attach to a GitHub issue.");
+    diagnosticsCommand.Options.Add(diagnosticsOutputOption);
+    diagnosticsCommand.Options.Add(diagnosticsRedactHostsOption);
+    diagnosticsCommand.SetAction((parseResult, cancellationToken) => DiagnosticsAsync(
+        services.GetRequiredService<IDiagnosticBundleService>(),
+        parseResult.GetValue(diagnosticsOutputOption),
+        parseResult.GetValue(diagnosticsRedactHostsOption),
+        cancellationToken));
+    rootCommand.Subcommands.Add(diagnosticsCommand);
 
     var preflightSiteOption = new Option<string>("--site") { Required = true, Description = "IIS site name." };
     var preflightHostsOption = new Option<string>("--hosts") { Required = true, Description = "Comma-separated host names." };
@@ -517,6 +546,75 @@ static async Task<int> RenewAsync(
     catch (Exception exception)
     {
         Log.Error(exception, "Certificate renewal command failed");
+        Console.Error.WriteLine($"Error: {exception.Message}");
+        return 1;
+    }
+}
+
+static async Task<int> HealthAsync(IHealthCheckService healthCheckService, CancellationToken cancellationToken)
+{
+    try
+    {
+        var results = await healthCheckService.RunAsync(null, cancellationToken).ConfigureAwait(false);
+        foreach (var result in results)
+        {
+            var label = result.Status switch
+            {
+                HealthStatus.Pass => "PASS",
+                HealthStatus.Warning => "WARN",
+                _ => "FAIL"
+            };
+            Console.WriteLine($"[{label}] {result.Name}: {result.Message}");
+            if (result.Status != HealthStatus.Pass && !string.IsNullOrWhiteSpace(result.Fix))
+            {
+                Console.WriteLine($"       Fix: {result.Fix}");
+            }
+        }
+
+        var failures = results.Count(result => result.Status == HealthStatus.Fail);
+        var warnings = results.Count(result => result.Status == HealthStatus.Warning);
+        Console.WriteLine();
+        Console.WriteLine($"{results.Count} checks: {results.Count - failures - warnings} passed, {warnings} warning(s), {failures} failed.");
+        return failures == 0 ? 0 : 1;
+    }
+    catch (Exception exception)
+    {
+        Log.Error(exception, "Health check failed");
+        Console.Error.WriteLine($"Error: {exception.Message}");
+        return 1;
+    }
+}
+
+static async Task<int> DiagnosticsAsync(
+    IDiagnosticBundleService bundleService,
+    string? output,
+    bool redactHosts,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        var path = string.IsNullOrWhiteSpace(output)
+            ? Path.Combine(Environment.CurrentDirectory, $"sslense-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip")
+            : output;
+        var progress = new Progress<ProgressEvent>(value => Console.WriteLine(value.Message));
+        var result = await bundleService
+            .CreateAsync(new DiagnosticBundleRequest(path, redactHosts), progress, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var note in result.Notes)
+        {
+            Console.WriteLine($"Note: {note}");
+        }
+
+        Console.WriteLine($"Diagnostic bundle created: {result.Path}");
+        Console.WriteLine(redactHosts
+            ? "Site and host names were replaced with placeholders."
+            : "Site and host names are included; add --redact-hosts before posting it publicly if they are private.");
+        Console.WriteLine("Secrets are removed automatically, but review the files before sharing them.");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        Log.Error(exception, "Failed to create the diagnostic bundle");
         Console.Error.WriteLine($"Error: {exception.Message}");
         return 1;
     }

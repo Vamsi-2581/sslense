@@ -1,5 +1,7 @@
+using System.Reflection;
 using SSLense.Core;
 using SSLense.Core.Certificates;
+using SSLense.Core.Diagnostics;
 using SSLense.Core.Renewal;
 
 namespace SSLense.Service;
@@ -8,14 +10,22 @@ internal sealed class RenewalWorker(
     IRenewalService renewalService,
     IExpiryMonitor expiryMonitor,
     ICertificateRecoveryService recoveryService,
+    IServiceHeartbeatStore heartbeatStore,
     ILogger<RenewalWorker> logger) : BackgroundService
 {
     // Hourly checks are cheap: certificates that are not due and retries still backing off
     // are skipped from saved state, and ARI responses are cached by the provider.
     private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(1);
 
+    private static readonly string Version =
+        (typeof(RenewalWorker).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? "unknown").Split('+')[0];
+
+    private ServiceHeartbeat _heartbeat = new(Version, DateTimeOffset.UtcNow);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await SaveHeartbeatAsync(_heartbeat, stoppingToken).ConfigureAwait(false);
         await RecoverAsync(stoppingToken).ConfigureAwait(false);
         await RunCycleAsync(stoppingToken).ConfigureAwait(false);
 
@@ -28,9 +38,44 @@ internal sealed class RenewalWorker(
 
     private async Task RunCycleAsync(CancellationToken cancellationToken)
     {
+        await SaveHeartbeatAsync(_heartbeat with { LastCycleStartedAt = DateTimeOffset.UtcNow }, cancellationToken)
+            .ConfigureAwait(false);
+
         // Expiry monitoring runs first and separately so it still alerts when renewal itself is broken.
-        await CheckExpiryAsync(cancellationToken).ConfigureAwait(false);
-        await RunRenewalAsync(cancellationToken).ConfigureAwait(false);
+        var expiryProblem = await CheckExpiryAsync(cancellationToken).ConfigureAwait(false);
+        var renewalProblem = await RunRenewalAsync(cancellationToken).ConfigureAwait(false);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var problem = renewalProblem ?? expiryProblem;
+        await SaveHeartbeatAsync(
+                _heartbeat with
+                {
+                    LastCycleCompletedAt = DateTimeOffset.UtcNow,
+                    LastCycleSucceeded = problem is null,
+                    LastCycleMessage = problem
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task SaveHeartbeatAsync(ServiceHeartbeat heartbeat, CancellationToken cancellationToken)
+    {
+        _heartbeat = heartbeat;
+        try
+        {
+            await heartbeatStore.SaveAsync(heartbeat, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            // The heartbeat only feeds the health check; failing to write it must not stop renewals.
+            logger.LogWarning(exception, "Could not record the service heartbeat");
+        }
     }
 
     private async Task RecoverAsync(CancellationToken cancellationToken)
@@ -58,7 +103,8 @@ internal sealed class RenewalWorker(
         }
     }
 
-    private async Task CheckExpiryAsync(CancellationToken cancellationToken)
+    /// <returns>A problem description, or null when the check ran.</returns>
+    private async Task<string?> CheckExpiryAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -66,17 +112,22 @@ internal sealed class RenewalWorker(
             {
                 logger.LogWarning("{ExpiryMessage}", message);
             }
+
+            return null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return null;
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "Certificate expiry check failed");
+            return $"Expiry check failed: {exception.Message}";
         }
     }
 
-    private async Task RunRenewalAsync(CancellationToken cancellationToken)
+    /// <returns>A problem description, or null when every attempted renewal succeeded.</returns>
+    private async Task<string?> RunRenewalAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -113,13 +164,18 @@ internal sealed class RenewalWorker(
                         result.Message);
                 }
             }
+
+            var failed = results.Where(result => !result.Succeeded).Select(result => result.SiteName).ToArray();
+            return failed.Length == 0 ? null : $"Renewal is failing for: {string.Join(", ", failed)}.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return null;
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "Scheduled certificate renewal check failed");
+            return $"Renewal check failed: {exception.Message}";
         }
     }
 }

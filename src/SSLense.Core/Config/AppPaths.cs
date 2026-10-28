@@ -29,4 +29,6 @@ public static class AppPaths
     public static string OperationLockDirectory => Path.Combine(DataDirectory, "locks");
 
     public static string TransactionDirectory => Path.Combine(DataDirectory, "transactions");
+
+    public static string ServiceHeartbeatFile => Path.Combine(DataDirectory, "service-heartbeat.json");
 }

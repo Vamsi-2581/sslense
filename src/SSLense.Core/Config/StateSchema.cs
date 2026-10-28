@@ -14,6 +14,8 @@ internal static class StateSchema
 
     public const int Transactions = 1;
 
+    public const int ServiceHeartbeat = 1;
+
     public static void EnsureSupported(int version, int supportedVersion, string path)
     {
         if (version > supportedVersion)

@@ -20,6 +20,7 @@ public partial class MainViewModel : ObservableObject
         IssueCertificateViewModel issue,
         CertificateDetailsViewModel details,
         SettingsViewModel settings,
+        HealthViewModel health,
         LogsViewModel logs,
         INavigationService navigation)
     {
@@ -35,6 +36,7 @@ public partial class MainViewModel : ObservableObject
             new NavigationItem("Issue Certificate", "\uE710", issue),
             new NavigationItem("Certificate Details", "\uE8D7", details),
             new NavigationItem("Settings", "\uE713", settings),
+            new NavigationItem("Health", "\uE95E", health),
             new NavigationItem("Logs", "\uE9D5", logs)
         ];
         selectedPage = Pages[0];

@@ -20,6 +20,7 @@ Complete:
 - Automatic renewal service: ARI-aware scheduling with a lifetime-relative fallback, a persisted retry schedule, hourly checks, rate-limit handling, and escalating failure notifications
 - Independent, lifetime-relative expiry monitoring; SMTP and webhook notifications
 - Cross-process per-site locking, durable operation journals, and non-fatal startup recovery
+- Health check (CLI and GUI) and redacted diagnostic bundles for support
 - Versioned state schemas with backup before migration and safe refusal of newer schemas
 - `C:\ProgramData\SSLense` restricted to Administrators and SYSTEM, with link-safe hardening
 - WPF GUI (Dashboard, Logs, Issue Certificate, Certificate Details, Settings) and matching CLI
@@ -56,10 +57,12 @@ These keep users' sites safe and make SSLense supportable without paid support. 
 
 ### 4.2 Diagnostics and health check
 
-- A one-click health check: state files, service heartbeat, folder permissions, IIS access, certificate store, DNS, HTTP reachability, ACME connectivity, and notification channels.
-- A diagnostic bundle that users can attach to a GitHub issue, with automatic redaction of passwords, keys, tokens, protected values, and webhook URLs, and tests that scan it for seeded secrets.
-- Service heartbeat and last successful cycle recorded in state.
+Done (October 28, 2026): `SSLense.Cli health` and the GUI Health page; a redacted diagnostic bundle (`SSLense.Cli diagnostics`, optional host redaction) with tests that scan it for seeded secrets; a service heartbeat recording each cycle; and a GitHub bug-report template that asks for both.
+
+Remaining:
+
 - Stable, searchable error codes.
+- Show the health summary on the Dashboard, so problems are visible without opening the Health page.
 
 ### 4.3 Distribution
 
