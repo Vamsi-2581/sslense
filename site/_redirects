@@ -1,0 +1,7 @@
+# Pages from the earlier commercial site; permanent redirects keep old search results and links working.
+/privacy        /   301
+/privacy/       /   301
+/terms          /   301
+/terms/         /   301
+/download       https://github.com/panchalvimaldev/sslense/releases   302
+/github         https://github.com/panchalvimaldev/sslense            302

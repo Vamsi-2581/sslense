@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Install a Free SSL Certificate on IIS with Let’s Encrypt | SSLense</title>
+<meta name="description" content="Install a free Let’s Encrypt SSL certificate on Windows IIS: prerequisites, step-by-step setup, HTTP to HTTPS redirect, automatic renewal and common errors.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://sslense.com/guides/install-ssl-iis-lets-encrypt/">
+<meta name="theme-color" content="#0b2545">
+<meta property="og:site_name" content="SSLense">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How to Install a Free SSL Certificate on IIS with Let’s Encrypt">
+<meta property="og:description" content="Prerequisites, setup steps, HTTP to HTTPS redirect, automatic renewal and common errors.">
+<meta property="og:url" content="https://sslense.com/guides/install-ssl-iis-lets-encrypt/">
+<meta property="og:image" content="https://sslense.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "How to install a free SSL certificate on IIS with Let’s Encrypt", "description": "Step-by-step guide to getting a free Let’s Encrypt SSL certificate onto a Windows IIS site, redirecting HTTP to HTTPS, and keeping it renewed.", "datePublished": "2026-10-28", "dateModified": "2026-10-28", "author": {"@type": "Organization", "name": "SSLense", "url": "https://sslense.com/"}, "publisher": {"@type": "Organization", "name": "SSLense", "url": "https://sslense.com/", "logo": {"@type": "ImageObject", "url": "https://sslense.com/apple-touch-icon.png"}}, "mainEntityOfPage": "https://sslense.com/guides/install-ssl-iis-lets-encrypt/", "image": "https://sslense.com/og-image.png"}</script>
+<style>
+:root{--bg:#fff;--surface:#f3f7fa;--text:#0b2545;--muted:#52627a;--line:#dbe4ec;--accent:#0f9e90}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1b2e;--surface:#112640;--text:#eaf2fa;--muted:#9db0c6;--line:#1f3a5a;--accent:#2dd4bf}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:17px/1.7 "Segoe UI",system-ui,Arial,sans-serif}
+a{color:var(--accent)}.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+header{padding:18px 0;border-bottom:1px solid var(--line)}header a{text-decoration:none;color:var(--text);font-size:22px;font-weight:800}header span{font-weight:400;color:var(--accent)}
+h1{font-size:clamp(28px,4.5vw,40px);line-height:1.2;margin:32px 0 8px}h2{font-size:26px;margin:40px 0 8px}h3{font-size:19px;margin:24px 0 4px}
+.meta{color:var(--muted);font-size:14px}.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:20px 0}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;font-size:14px;line-height:1.5}
+code{font-family:Consolas,monospace}li{margin:6px 0}footer{padding:36px 0 48px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);margin-top:48px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><a href="/">SSL<span>ense</span></a></header>
+<main>
+<article>
+<p class="meta"><a href="/">Home</a> › Guides</p>
+<h1>How to install a free SSL certificate on IIS with Let’s Encrypt</h1>
+<p class="meta">Updated October 28, 2026 · About 8 minutes</p>
+<p>You can secure a Windows IIS website with a free, trusted certificate from Let’s Encrypt. You need an ACME client on the server to request the certificate, bind it to your site and renew it automatically. This guide covers the prerequisites, the setup steps, the HTTP to HTTPS redirect and the errors people hit most often.</p>
+
+<div class="box"><strong>Short version:</strong> point your domain at the server, make sure the IIS site has a port 80 binding with the real host name, open ports 80 and 443, run an ACME client as Administrator (such as win-acme, Certify The Web or SSLense), confirm the new HTTPS binding works, then redirect HTTP to HTTPS and check that renewal is scheduled.</div>
+
+<h2>What you need before you start</h2>
+<ul>
+<li><strong>Administrator access</strong> to a Windows Server running IIS.</li>
+<li><strong>A domain name</strong> whose DNS A record points to the server’s public IP address.</li>
+<li><strong>An IIS site binding</strong> on port 80 with the exact host name (for example <code>example.com</code>), not a blank host name.</li>
+<li><strong>Ports 80 and 443 open</strong> in Windows Firewall and any network firewall. Port 80 is used for domain validation.</li>
+</ul>
+
+<h2>Step 1: Check your IIS binding</h2>
+<p>In IIS Manager, select your site, choose <em>Bindings</em>, and confirm there is an HTTP binding on port 80 with your domain as the host name. Add one for <code>www</code> as well if you want both names covered. ACME clients use the host name to find the right site and to validate the domain.</p>
+
+<h2>Step 2: Request and install the certificate</h2>
+<p>Choose an ACME client that runs on Windows:</p>
+<ul>
+<li><strong>win-acme</strong> is a free command-line client with a guided menu.</li>
+<li><strong>Certify The Web</strong> is a GUI client with a free tier. Check its licence terms for commercial use.</li>
+<li><strong>SSLense</strong> is a free, open-source GUI and CLI tool built for IIS, with automatic renewal and rollback if a new binding does not work.</li>
+</ul>
+<p>Whichever you use, run it as Administrator, select your IIS site and host names, and enter an email address for expiry notices. The client proves you control the domain, downloads the certificate, imports it into the Windows certificate store and adds an HTTPS binding on port 443.</p>
+<p>Tip: if you are testing, use the Let’s Encrypt staging environment first. It avoids rate limits, although staging certificates are not trusted by browsers.</p>
+
+<h2>Step 3: Test the HTTPS site</h2>
+<p>Open <code>https://yourdomain.com</code> in a browser and check for the padlock. Look at the certificate details to confirm the issuer is Let’s Encrypt and note the expiry date. Let’s Encrypt certificates have short lifetimes, so automatic renewal is not optional.</p>
+
+<h2>Step 4: Redirect HTTP to HTTPS</h2>
+<p>Install the IIS <em>URL Rewrite</em> module, then add this rule inside <code>&lt;system.webServer&gt;</code> in your site’s <code>web.config</code>:</p>
+<pre><code>&lt;rewrite&gt;
+  &lt;rules&gt;
+    &lt;rule name="HTTP to HTTPS" stopProcessing="true"&gt;
+      &lt;match url="(.*)" /&gt;
+      &lt;conditions&gt;
+        &lt;add input="{HTTPS}" pattern="off" ignoreCase="true" /&gt;
+      &lt;/conditions&gt;
+      &lt;action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" /&gt;
+    &lt;/rule&gt;
+  &lt;/rules&gt;
+&lt;/rewrite&gt;</code></pre>
+<p>After the redirect works, fix any hard-coded <code>http://</code> links in your pages, scripts and APIs. They trigger mixed-content warnings. Consider enabling HSTS only once you are sure everything works over HTTPS.</p>
+
+<h2>Step 5: Make sure renewal works</h2>
+<p>Renewal is the part that fails quietly. Check three things:</p>
+<ol>
+<li>The scheduled task or service from your ACME client exists and runs under an account that can edit IIS bindings and the certificate store.</li>
+<li>Its last run result shows success. Force one renewal manually to test the whole chain.</li>
+<li>You have an external expiry monitor or alert, so a silent failure is caught before visitors see a certificate error.</li>
+</ol>
+
+<h2>Common errors and fixes</h2>
+<h3>Validation fails or times out</h3>
+<p>Port 80 is usually blocked, or DNS does not yet point to the server. Check the firewall, any router or cloud security group, and that the A record is correct.</p>
+<h3>Challenge file returns 404</h3>
+<p>Your app may route every request through MVC or a catch-all rule, or block extensionless files. Make sure <code>/.well-known/acme-challenge/</code> is served as static content.</p>
+<h3>“No binding found” or wrong site selected</h3>
+<p>The IIS binding has no host name or the wrong one. Edit the binding so it has the exact domain.</p>
+<h3>Browser still shows “not secure”</h3>
+<p>Check for mixed content, an HTTPS binding attached to the wrong certificate, or an old cached page.</p>
+<h3>Old devices cannot connect</h3>
+<p>Very old clients may not trust the Let’s Encrypt root certificates. Test legacy integrations before switching.</p>
+
+<h2>Do you need a paid certificate?</h2>
+<p>Usually not. Free domain-validated certificates give the same encryption as paid ones. You would choose a paid certificate if you need organization or extended validation, a warranty or vendor support, or you cannot automate renewal.</p>
+
+<div class="box"><strong>Want this automated with a GUI?</strong> SSLense issues the certificate, binds it in IIS, checks it over HTTPS and renews it in the background. It is free and open source. <a href="https://github.com/panchalvimaldev/sslense/releases">Download SSLense</a>.</div>
+</article>
+</main>
+<footer>SSLense is open source under the Apache License 2.0, an independent project not affiliated with or endorsed by Let’s Encrypt or the Internet Security Research Group. <a href="/">Home</a> · <a href="https://github.com/panchalvimaldev/sslense">GitHub</a> · <a href="https://github.com/panchalvimaldev/sslense/releases">Download</a></footer>
+</div>
+</body>
+</html>
