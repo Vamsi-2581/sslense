@@ -27,7 +27,7 @@ Everything SSLense already does for Let's Encrypt certificates (safe binding swa
 | Complete the request with the certificate the CA issued (and its intermediate bundle) | **Complete request** on the pending item | `SSLense.Cli complete --site <site> --certificate issued.crt [--chain bundle.crt]` |
 | Import a certificate that already has its key (PFX) | **Import certificate** | `SSLense.Cli import --site <site> --pfx file.pfx` (password prompted) |
 | Start monitoring a certificate already bound in IIS, without reinstalling | **Adopt** on the discovered list | `SSLense.Cli adopt --site <site>` / `SSLense.Cli discover` |
-| Replace it when the next certificate arrives | **Replace** (new CSR, then Complete) | `csr` then `complete` again, or `import --replace` |
+| Replace it when the next certificate arrives | **Replace** (new CSR, then Complete) | `csr` then `complete` again, or `import` again (replacing a certificate SSLense renews itself needs `--force`) |
 
 What happens on install, for every path above:
 
@@ -80,8 +80,9 @@ Rules:
 | File | Change | Schema |
 |---|---|---|
 | `config.json` | New `certificateAuthorities` list: id, name, directory URL, is-test flag, EAB key ID, DPAPI-protected HMAC key, production acknowledged | 2 → 3 |
-| `managed-certificates.json` | Each record gains `source` (`Acme` or `Imported`), `authorityId` (ACME), `issuer`, and `pendingRequest` (key name, hosts, created date) | 1 → 2 |
+| `managed-certificates.json` | Each record gains `source` (`Acme` or `Imported`), `authorityId` (ACME), `issuer`, and `reminderDaysSent` (the last imported-certificate reminder sent) | 1 → 2 |
 | Account keys | `account-key.<profile-id>.dat` per profile; existing `account-key.staging.dat` and `account-key.production.dat` keep working as the Let's Encrypt profiles | n/a |
+| `pending-requests.json` (new) | Open certificate requests, one per site: site, hosts, key name, key type, the CSR, created date. Kept apart from the managed record so a pending replacement never disturbs the certificate in use | 1 |
 
 Migration, using the existing pattern (backup first, refuse newer schemas): every existing record becomes `source = Acme` with `authorityId = letsencrypt` or `letsencrypt-staging` from its current `environment`. Nothing else changes for existing installations.
 
@@ -114,7 +115,7 @@ In code, `AcmeEnvironment` (an enum with two hard-coded Let's Encrypt URLs, used
 | Step | Contents | Ships |
 |---|---|---|
 | 1 | Data model, `CertificateAuthority` profiles replacing `AcmeEnvironment`, migrations; no visible change. **Done.** | Internal |
-| 2 | Bring your own certificate: import, adopt, CSR and complete, replace; reminders; health checks; CLI | CLI |
+| 2 | Bring your own certificate: import, adopt, CSR and complete, replace; reminders; health checks; CLI. **Done.** | CLI |
 | 3 | GUI for step 2 | GUI |
 | 4 | Any ACME CA: profiles, presets, EAB, guards, `--ca`; health and diagnostics; CLI and GUI | Both |
 | 5 | Pebble EAB tests in CI, documentation, website and roadmap updates | Docs |

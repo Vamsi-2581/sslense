@@ -20,6 +20,16 @@ internal sealed class ExpiryMonitor(
         foreach (var certificate in await managedStore.GetAllAsync(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (certificate.Source == CertificateSource.Imported && certificate.NotAfter > now)
+            {
+                if (await SendImportedReminderAsync(certificate, now, cancellationToken).ConfigureAwait(false) is { } message)
+                {
+                    sent.Add(message);
+                }
+
+                continue;
+            }
+
             var level = GetLevel(certificate, now);
             if (level <= certificate.ExpiryWarningSent)
             {
@@ -49,6 +59,58 @@ internal sealed class ExpiryMonitor(
         }
 
         return sent;
+    }
+
+    /// <summary>
+    /// Ordering a certificate from a CA takes time, so imported certificates get fixed, earlier reminders than the
+    /// lifetime-relative warnings for certificates SSLense renews itself. Each is sent once.
+    /// </summary>
+    internal static IReadOnlyList<int> ImportedReminderDays { get; } = [30, 14, 7, 1];
+
+    /// <summary>The reminder due now (30, 14, 7, or 1 days), or null when none is due.</summary>
+    internal static int? GetImportedReminder(ManagedCertificate certificate, DateTimeOffset now)
+    {
+        var daysLeft = (certificate.NotAfter - now).TotalDays;
+        int? due = ImportedReminderDays.Where(days => daysLeft <= days).Select(days => (int?)days).LastOrDefault();
+        return due is { } value && (certificate.ReminderDaysSent is null || value < certificate.ReminderDaysSent)
+            ? value
+            : null;
+    }
+
+    private async Task<string?> SendImportedReminderAsync(
+        ManagedCertificate certificate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (GetImportedReminder(certificate, now) is not { } days)
+        {
+            return null;
+        }
+
+        var daysLeft = Math.Max(0, (int)Math.Floor((certificate.NotAfter - now).TotalDays));
+        var issuer = certificate.Issuer is { Length: > 0 } name ? name : "its issuer";
+        var message = new NotificationMessage(
+            NotificationKind.ExpiryWarning,
+            $"SSLense: order a replacement certificate for {certificate.SiteName} ({daysLeft} days left)",
+            $"The certificate for {certificate.SiteName} ({string.Join(", ", certificate.Hosts)}) from {issuer} expires at " +
+            $"{certificate.NotAfter:O}. SSLense cannot renew it automatically because it was obtained outside SSLense.{Environment.NewLine}" +
+            $"To replace it: run 'SSLense.Cli csr --site \"{certificate.SiteName}\"', submit the request to {issuer}, then run " +
+            $"'SSLense.Cli complete --site \"{certificate.SiteName}\" --certificate <issued file>'. " +
+            "SSLense swaps the binding safely and keeps the current certificate until the new one is confirmed.",
+            days <= 7 ? NotificationSeverity.Error : NotificationSeverity.Warning);
+        try
+        {
+            await notifier.NotifyAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return $"Could not send the {days}-day reminder for '{certificate.SiteName}': {exception.Message} " +
+                   "It will be retried on the next check.";
+        }
+
+        await managedStore.RecordImportedReminderAsync(certificate.SiteName, certificate.Thumbprint, days, CancellationToken.None)
+            .ConfigureAwait(false);
+        return $"Sent the {days}-day replacement reminder for imported certificate '{certificate.SiteName}'.";
     }
 
     internal static ExpiryWarningLevel GetLevel(ManagedCertificate certificate, DateTimeOffset now)
@@ -81,8 +143,12 @@ internal sealed class ExpiryMonitor(
             ? new NotificationMessage(
                 NotificationKind.ExpiryWarning,
                 $"SSLense certificate EXPIRED: {certificate.SiteName}",
-                $"The {environment} certificate for {certificate.SiteName} ({hosts}) expired at " +
-                $"{certificate.NotAfter:O}. HTTPS clients now reject it.{renewalState}",
+                certificate.Source == CertificateSource.Imported
+                    ? $"The certificate for {certificate.SiteName} ({hosts}) from {certificate.Issuer ?? "its issuer"} expired at " +
+                      $"{certificate.NotAfter:O}. HTTPS clients now reject it. Order a replacement, then install it with " +
+                      $"'SSLense.Cli complete' or 'SSLense.Cli import'."
+                    : $"The {environment} certificate for {certificate.SiteName} ({hosts}) expired at " +
+                      $"{certificate.NotAfter:O}. HTTPS clients now reject it.{renewalState}",
                 NotificationSeverity.Error)
             : new NotificationMessage(
                 NotificationKind.ExpiryWarning,

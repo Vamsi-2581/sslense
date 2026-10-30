@@ -50,6 +50,9 @@ public static class DependencyInjection
         services.AddTransient<IPreflightService, PreflightService>();
         services.AddTransient<ISettingsService, SettingsService>();
         services.AddTransient<ICertificateManagementService, CertificateManagementService>();
+        services.AddSingleton<IPendingRequestStore, JsonPendingRequestStore>();
+        services.AddSingleton<IPrivateKeyStore>(_ => new CngPrivateKeyStore(machineScope: true));
+        services.AddTransient<IImportedCertificateService, ImportedCertificateService>();
         services.AddSingleton<IServiceHeartbeatStore, JsonServiceHeartbeatStore>();
         services.AddSingleton<IHostResolver, DnsHostResolver>();
         services.AddTransient<IHealthCheckService, HealthCheckService>();

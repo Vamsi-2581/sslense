@@ -8,7 +8,9 @@ namespace SSLense.Core.Config;
 /// </param>
 /// <param name="Source">Whether SSLense obtains and renews this certificate, or it was installed from elsewhere.</param>
 /// <param name="Issuer">The issuing CA's name, as shown in the certificate, for display.</param>
-/// <param name="PendingRequest">A certificate request (CSR) waiting for the CA to issue its certificate.</param>
+/// <param name="ReminderDaysSent">
+/// For imported certificates, the smallest "days before expiry" reminder already sent (30, 14, 7, or 1).
+/// </param>
 public sealed record ManagedCertificate(
     string SiteName,
     IReadOnlyList<string> Hosts,
@@ -27,7 +29,7 @@ public sealed record ManagedCertificate(
     Guid Id = default,
     CertificateSource Source = CertificateSource.Acme,
     string? Issuer = null,
-    PendingCertificateRequest? PendingRequest = null);
+    int? ReminderDaysSent = null);
 
 /// <summary>Expiry notification levels, each sent at most once per certificate.</summary>
 public enum ExpiryWarningLevel
@@ -46,11 +48,3 @@ public enum CertificateSource
     /// <summary>Obtained elsewhere (bought from a reseller, or issued by another tool) and renewed manually.</summary>
     Imported = 1
 }
-
-/// <param name="KeyName">Name of the persisted, non-exportable machine key in the Windows key store.</param>
-/// <param name="KeyType">rsa2048, rsa3072, or ec256.</param>
-public sealed record PendingCertificateRequest(
-    string KeyName,
-    IReadOnlyList<string> Hosts,
-    string KeyType,
-    DateTimeOffset CreatedAt);

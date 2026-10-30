@@ -37,6 +37,30 @@ public sealed class CertificateManagementServiceTests
     }
 
     [Fact]
+    public async Task RemoveAsync_ImportedCertificate_StaysInTheStore()
+    {
+        var record = new ManagedCertificate(
+            "My Site", ["example.com"], "", "BOUGHT",
+            DateTimeOffset.UtcNow.AddDays(-30), DateTimeOffset.UtcNow.AddDays(300),
+            Source: CertificateSource.Imported);
+        var managed = new Mock<IManagedCertificateStore>(MockBehavior.Strict);
+        managed.Setup(value => value.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([record]);
+        managed.Setup(value => value.RemoveAsync("My Site", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.RemoveHttpsBindingsAsync(
+            "My Site", It.IsAny<IReadOnlyList<string>>(), "BOUGHT", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var certificates = new Mock<ICertificateStore>(MockBehavior.Strict);
+        var service = new CertificateManagementService(
+            managed.Object, certificates.Object, iis.Object, Mock.Of<ILogService>());
+
+        await service.RemoveAsync("My Site");
+
+        certificates.VerifyNoOtherCalls();
+        managed.VerifyAll();
+    }
+
+    [Fact]
     public async Task GetDetailsAsync_ReturnsIssuerBindingsAndTenLogs()
     {
         var record = new ManagedCertificate(

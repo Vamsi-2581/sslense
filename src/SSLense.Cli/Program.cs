@@ -291,6 +291,7 @@ static RootCommand CreateRootCommand(IServiceProvider services)
     }
 
     rootCommand.Subcommands.Add(CreateNotificationsCommand(services));
+    AddImportedCertificateCommands(rootCommand, services);
 
     return rootCommand;
 }
@@ -342,6 +343,305 @@ static async Task<int> ServiceActionAsync(IWindowsServiceManager service, string
         Console.WriteLine($"SSLense service status: {status}"); return 0;
     }
     catch (Exception exception) { Log.Error(exception, "Service action {Action} failed", action); Console.Error.WriteLine($"Error: {exception.Message}"); return 1; }
+}
+
+static void AddImportedCertificateCommands(RootCommand rootCommand, IServiceProvider services)
+{
+    IImportedCertificateService Service() => services.GetRequiredService<IImportedCertificateService>();
+
+    var discoverCommand = new Command("discover", "List IIS HTTPS bindings and their certificates, and whether SSLense manages them.");
+    discoverCommand.SetAction((_, token) => DiscoverAsync(Service(), token));
+    rootCommand.Subcommands.Add(discoverCommand);
+
+    var adoptSiteOption = new Option<string>("--site") { Required = true, Description = "IIS site name." };
+    var adoptThumbprintOption = new Option<string?>("--thumbprint") { Description = "Certificate to adopt, when the site uses several." };
+    var adoptCommand = new Command("adopt", "Start monitoring the certificate already bound to a site, without changing IIS.");
+    adoptCommand.Options.Add(adoptSiteOption);
+    adoptCommand.Options.Add(adoptThumbprintOption);
+    adoptCommand.SetAction((parseResult, token) => AdoptAsync(
+        Service(), parseResult.GetRequiredValue(adoptSiteOption), parseResult.GetValue(adoptThumbprintOption), token));
+    rootCommand.Subcommands.Add(adoptCommand);
+
+    var csrSiteOption = new Option<string>("--site") { Required = true, Description = "IIS site the certificate is for." };
+    var csrHostsOption = new Option<string>("--hosts") { Required = true, Description = "Comma-separated host names; the first becomes the common name." };
+    var csrKeyOption = new Option<string>("--key") { Description = "rsa2048 (default), rsa3072, or ec256.", DefaultValueFactory = _ => PrivateKeyTypes.Default };
+    csrKeyOption.AcceptOnlyFromAmong([.. PrivateKeyTypes.All]);
+    var csrOutOption = new Option<string?>("--out") { Description = "File for the request (default: on your Desktop)." };
+    var csrCommand = new Command(
+        "csr",
+        "Create a certificate request (CSR) to buy or renew a certificate elsewhere. The private key stays on this server.");
+    foreach (var option in new Option[] { csrSiteOption, csrHostsOption, csrKeyOption, csrOutOption })
+    {
+        csrCommand.Options.Add(option);
+    }
+
+    csrCommand.SetAction((parseResult, token) => CreateRequestAsync(
+        Service(),
+        parseResult.GetRequiredValue(csrSiteOption),
+        parseResult.GetRequiredValue(csrHostsOption),
+        parseResult.GetValue(csrKeyOption) ?? PrivateKeyTypes.Default,
+        parseResult.GetValue(csrOutOption),
+        token));
+    rootCommand.Subcommands.Add(csrCommand);
+
+    var pendingSiteOption = new Option<string?>("--site") { Description = "Show the request for this site again." };
+    var pendingCommand = new Command("pending", "List certificate requests waiting for a certificate, or show one again.");
+    pendingCommand.Options.Add(pendingSiteOption);
+    pendingCommand.SetAction((parseResult, token) => ShowPendingAsync(
+        Service(), services.GetRequiredService<IPendingRequestStore>(), parseResult.GetValue(pendingSiteOption), token));
+    rootCommand.Subcommands.Add(pendingCommand);
+
+    var cancelSiteOption = new Option<string>("--site") { Required = true, Description = "IIS site name." };
+    var cancelCommand = new Command("cancel-request", "Remove a pending certificate request and delete its private key.");
+    cancelCommand.Options.Add(cancelSiteOption);
+    cancelCommand.SetAction((parseResult, token) => CancelRequestAsync(Service(), parseResult.GetRequiredValue(cancelSiteOption), token));
+    rootCommand.Subcommands.Add(cancelCommand);
+
+    var completeSiteOption = new Option<string>("--site") { Required = true, Description = "IIS site with the pending request." };
+    var completeCertificateOption = new Option<string>("--certificate") { Required = true, Description = "Certificate file from the provider (.crt, .cer, or .pem)." };
+    var completeChainOption = new Option<string?>("--chain") { Description = "Intermediate bundle from the provider (often ca-bundle or chain)." };
+    var completeForceOption = new Option<bool>("--force") { Description = "Replace a certificate that SSLense renews automatically." };
+    var completeCommand = new Command("complete", "Install the certificate issued for a site's pending request, and bind it safely.");
+    foreach (var option in new Option[] { completeSiteOption, completeCertificateOption, completeChainOption, completeForceOption })
+    {
+        completeCommand.Options.Add(option);
+    }
+
+    completeCommand.SetAction((parseResult, token) => CompleteRequestAsync(
+        Service(),
+        parseResult.GetRequiredValue(completeSiteOption),
+        parseResult.GetRequiredValue(completeCertificateOption),
+        parseResult.GetValue(completeChainOption),
+        parseResult.GetValue(completeForceOption),
+        token));
+    rootCommand.Subcommands.Add(completeCommand);
+
+    var importSiteOption = new Option<string>("--site") { Required = true, Description = "IIS site to bind the certificate to." };
+    var importPfxOption = new Option<string>("--pfx") { Required = true, Description = "PFX (.pfx or .p12) file with the certificate and its private key." };
+    var importHostsOption = new Option<string?>("--hosts") { Description = "Host names to bind (default: the site's host names the certificate covers)." };
+    var importForceOption = new Option<bool>("--force") { Description = "Replace a certificate that SSLense renews automatically." };
+    var importCommand = new Command("import", "Install a certificate from a PFX file and bind it safely. The password is prompted.");
+    foreach (var option in new Option[] { importSiteOption, importPfxOption, importHostsOption, importForceOption })
+    {
+        importCommand.Options.Add(option);
+    }
+
+    importCommand.SetAction((parseResult, token) => ImportPfxAsync(
+        Service(),
+        parseResult.GetRequiredValue(importSiteOption),
+        parseResult.GetRequiredValue(importPfxOption),
+        parseResult.GetValue(importHostsOption),
+        parseResult.GetValue(importForceOption),
+        token));
+    rootCommand.Subcommands.Add(importCommand);
+}
+
+static async Task<int> DiscoverAsync(IImportedCertificateService service, CancellationToken token)
+{
+    try
+    {
+        var bindings = await service.DiscoverAsync(token).ConfigureAwait(false);
+        if (bindings.Count == 0)
+        {
+            Console.WriteLine("No HTTPS bindings were found in IIS.");
+            return 0;
+        }
+
+        foreach (var site in bindings.GroupBy(binding => binding.SiteName))
+        {
+            Console.WriteLine(site.Key);
+            foreach (var binding in site)
+            {
+                var certificate = binding.Thumbprint is null
+                    ? "no certificate"
+                    : $"{binding.Thumbprint}, issued by {binding.IssuerName ?? "unknown"}, expires {binding.NotAfter:yyyy-MM-dd}";
+                var host = binding.Host.Length == 0 ? "(no host name)" : binding.Host;
+                Console.WriteLine($"  {host}:{binding.Port}  {certificate}{(binding.IsManaged ? "  [managed]" : string.Empty)}");
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Start monitoring an unmanaged certificate with: SSLense.Cli adopt --site \"<site>\"");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Discovery failed");
+    }
+}
+
+static async Task<int> AdoptAsync(IImportedCertificateService service, string site, string? thumbprint, CancellationToken token)
+{
+    try
+    {
+        var record = await service.AdoptAsync(site, thumbprint, token).ConfigureAwait(false);
+        Console.WriteLine($"Now monitoring certificate {record.Thumbprint} for '{record.SiteName}' ({string.Join(", ", record.Hosts)}).");
+        Console.WriteLine($"Issued by {record.Issuer ?? "unknown"}; expires {record.NotAfter:yyyy-MM-dd}. Reminders are sent 30, 14, 7, and 1 days before.");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Adopting the certificate failed");
+    }
+}
+
+static async Task<int> CreateRequestAsync(
+    IImportedCertificateService service,
+    string site,
+    string hostsValue,
+    string keyType,
+    string? output,
+    CancellationToken token)
+{
+    try
+    {
+        var hosts = hostsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var request = await service.CreateRequestAsync(site, hosts, keyType, token).ConfigureAwait(false);
+        var path = string.IsNullOrWhiteSpace(output)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) is { Length: > 0 } desktop ? desktop : Environment.CurrentDirectory,
+                $"sslense-{string.Concat(request.Hosts[0].Select(character => char.IsLetterOrDigit(character) ? character : '-'))}-{DateTime.Now:yyyyMMdd}.csr")
+            : output;
+        await File.WriteAllTextAsync(path, request.CsrPem, token).ConfigureAwait(false);
+        Console.WriteLine(request.CsrPem);
+        Console.WriteLine($"Certificate request saved to {path}");
+        Console.WriteLine($"Key: {request.KeyType}, created in the Windows key store on this server and never exported.");
+        Console.WriteLine();
+        Console.WriteLine("Next: paste the request into your certificate provider's order form. When the certificate is issued, run:");
+        Console.WriteLine($"  SSLense.Cli complete --site \"{request.SiteName}\" --certificate <certificate file> --chain <bundle file>");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Creating the certificate request failed");
+    }
+}
+
+static async Task<int> ShowPendingAsync(
+    IImportedCertificateService service,
+    IPendingRequestStore store,
+    string? site,
+    CancellationToken token)
+{
+    try
+    {
+        if (site is not null)
+        {
+            var request = await service.GetRequestAsync(site, token).ConfigureAwait(false);
+            if (request is null)
+            {
+                Console.Error.WriteLine($"Error: IIS site '{site}' has no pending certificate request.");
+                return 1;
+            }
+
+            Console.WriteLine(request.CsrPem);
+            return 0;
+        }
+
+        var requests = await store.GetAllAsync(token).ConfigureAwait(false);
+        if (requests.Count == 0)
+        {
+            Console.WriteLine("No certificate requests are waiting for a certificate.");
+        }
+
+        foreach (var request in requests)
+        {
+            Console.WriteLine($"{request.SiteName}: {string.Join(", ", request.Hosts)} ({request.KeyType}, created {request.CreatedAt:yyyy-MM-dd})");
+        }
+
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Reading pending requests failed");
+    }
+}
+
+static async Task<int> CancelRequestAsync(IImportedCertificateService service, string site, CancellationToken token)
+{
+    try
+    {
+        await service.CancelRequestAsync(site, token).ConfigureAwait(false);
+        Console.WriteLine($"The pending request for '{site}' was removed and its private key deleted.");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Cancelling the request failed");
+    }
+}
+
+static async Task<int> CompleteRequestAsync(
+    IImportedCertificateService service,
+    string site,
+    string certificatePath,
+    string? chainPath,
+    bool force,
+    CancellationToken token)
+{
+    try
+    {
+        var certificate = await File.ReadAllBytesAsync(certificatePath, token).ConfigureAwait(false);
+        var chain = chainPath is null ? null : await File.ReadAllBytesAsync(chainPath, token).ConfigureAwait(false);
+        var result = await service.CompleteRequestAsync(site, certificate, chain, force, new ConsoleProgress(), token).ConfigureAwait(false);
+        PrintImportResult(result);
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Completing the certificate request failed");
+    }
+}
+
+static async Task<int> ImportPfxAsync(
+    IImportedCertificateService service,
+    string site,
+    string pfxPath,
+    string? hostsValue,
+    bool force,
+    CancellationToken token)
+{
+    byte[]? pfx = null;
+    try
+    {
+        pfx = await File.ReadAllBytesAsync(pfxPath, token).ConfigureAwait(false);
+        var password = ReadHiddenValue("PFX password: ");
+        var hosts = string.IsNullOrWhiteSpace(hostsValue)
+            ? []
+            : hostsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = await service.ImportPfxAsync(site, hosts, pfx, password, force, new ConsoleProgress(), token).ConfigureAwait(false);
+        PrintImportResult(result);
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Importing the PFX failed");
+    }
+    finally
+    {
+        if (pfx is not null)
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(pfx);
+        }
+    }
+}
+
+static void PrintImportResult(ImportResult result)
+{
+    var record = result.Certificate;
+    Console.WriteLine($"SUCCESS: certificate {record.Thumbprint} installed and bound for '{record.SiteName}' ({string.Join(", ", record.Hosts)}).");
+    Console.WriteLine($"Issued by {record.Issuer ?? "unknown"}; expires {record.NotAfter:yyyy-MM-dd}. SSLense will remind you 30, 14, 7, and 1 days before.");
+    foreach (var note in result.Notes)
+    {
+        Console.WriteLine($"Note: {note}");
+    }
+}
+
+static int ReportFailure(Exception exception, string logMessage)
+{
+    Log.Error(exception, "{Operation}", logMessage);
+    Console.Error.WriteLine($"Error: {exception.Message}");
+    return 1;
 }
 
 static Command CreateNotificationsCommand(IServiceProvider services)
@@ -864,7 +1164,9 @@ static async Task<int> StatusAsync(
         foreach (var status in statuses)
         {
             Console.WriteLine(status.SiteName);
-            Console.WriteLine($"  Certificate authority: {status.AuthorityName}");
+            Console.WriteLine(status.Source == CertificateSource.Imported
+                ? $"  Source: {status.AuthorityName}, renewed manually"
+                : $"  Certificate authority: {status.AuthorityName}");
             if (!string.IsNullOrWhiteSpace(status.Issuer))
             {
                 Console.WriteLine($"  Issuer: {status.Issuer}");

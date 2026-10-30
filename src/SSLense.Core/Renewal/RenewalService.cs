@@ -118,6 +118,19 @@ internal sealed class RenewalService : IRenewalService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // No CA renews an imported certificate for SSLense; ExpiryMonitor reminds the administrator instead.
+            if (certificate.Source == CertificateSource.Imported)
+            {
+                results.Add(new RenewalResult(
+                    certificate.SiteName,
+                    false,
+                    true,
+                    "Skipped: imported certificate, renewed manually. Order the replacement from " +
+                    $"{certificate.Issuer ?? "the issuer"} using 'SSLense.Cli csr --site \"{certificate.SiteName}\"', then 'complete'.",
+                    certificate.Thumbprint));
+                continue;
+            }
+
             // Only the service honors the saved backoff; an administrator renewing by hand means "now".
             if (request.Scheduled && !request.Force &&
                 certificate.NextRetryAt is { } retryAt && DateTimeOffset.UtcNow < retryAt)

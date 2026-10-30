@@ -5,4 +5,6 @@ public sealed record InstalledCertificate(
     DateTimeOffset NotBefore,
     DateTimeOffset NotAfter,
     bool HasPrivateKey,
-    string? Issuer = null);
+    string? Issuer = null,
+    IReadOnlyList<string>? DnsNames = null,
+    string? IssuerName = null);

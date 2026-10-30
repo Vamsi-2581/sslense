@@ -114,6 +114,27 @@ public sealed class JsonManagedCertificateStore : IManagedCertificateStore
             },
             cancellationToken);
 
+    public Task RecordImportedReminderAsync(
+        string siteName,
+        string thumbprint,
+        int days,
+        CancellationToken cancellationToken = default) =>
+        UpdateAsync(
+            records =>
+            {
+                var index = records.FindIndex(value => IsSite(value, siteName));
+                if (index < 0 ||
+                    !string.Equals(records[index].Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase) ||
+                    records[index].ReminderDaysSent <= days)
+                {
+                    return false;
+                }
+
+                records[index] = records[index] with { ReminderDaysSent = days };
+                return true;
+            },
+            cancellationToken);
+
     public async Task RemoveAsync(string siteName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(siteName);

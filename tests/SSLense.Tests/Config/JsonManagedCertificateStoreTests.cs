@@ -139,6 +139,19 @@ public sealed class JsonManagedCertificateStoreTests
         Assert.Equal(ExpiryWarningLevel.Critical, Assert.Single(await store.GetAllAsync()).ExpiryWarningSent);
     }
 
+    [Fact]
+    public async Task RecordImportedReminderAsync_OnlyMovesTowardsExpiry()
+    {
+        var store = new JsonManagedCertificateStore(new InMemoryFileSystem(), StatePath, LockPath);
+        await store.UpsertAsync(CreateCertificate() with { Source = CertificateSource.Imported });
+
+        await store.RecordImportedReminderAsync("My Site", "AABBCC", 14);
+        await store.RecordImportedReminderAsync("My Site", "AABBCC", 30);
+        await store.RecordImportedReminderAsync("My Site", "REPLACED", 1);
+
+        Assert.Equal(14, Assert.Single(await store.GetAllAsync()).ReminderDaysSent);
+    }
+
     private const string LegacyJson = """
         [
           {

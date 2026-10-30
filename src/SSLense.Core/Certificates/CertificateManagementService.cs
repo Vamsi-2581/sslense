@@ -56,7 +56,8 @@ internal sealed class CertificateManagementService(
         var sites = await iisService.GetSitesAsync(cancellationToken).ConfigureAwait(false);
         var stillUsed = sites.SelectMany(site => site.Bindings).Any(binding =>
             string.Equals(binding.CertificateThumbprint, record.Thumbprint, StringComparison.OrdinalIgnoreCase));
-        if (!stillUsed)
+        // Only certificates SSLense obtained itself are deleted; an imported one may be used outside IIS.
+        if (!stillUsed && record.Source == CertificateSource.Acme)
         {
             await certificateStore.RemoveAsync(record.Thumbprint, cancellationToken).ConfigureAwait(false);
         }

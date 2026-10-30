@@ -31,5 +31,15 @@ public interface IManagedCertificateStore
         ExpiryWarningLevel level,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Records that the given "days before expiry" reminder was sent for an imported certificate. Ignored when the
+    /// certificate has since been replaced, or a closer reminder was already recorded.
+    /// </summary>
+    Task RecordImportedReminderAsync(
+        string siteName,
+        string thumbprint,
+        int days,
+        CancellationToken cancellationToken = default);
+
     Task RemoveAsync(string siteName, CancellationToken cancellationToken = default);
 }
