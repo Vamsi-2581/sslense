@@ -25,6 +25,7 @@ public sealed class ImportedCertificateServiceTests : IDisposable
     private readonly FakeCertificateStore _store = new();
     private readonly List<ManagedCertificate> _managed = [];
     private readonly Mock<IIisService> _iis = new(MockBehavior.Strict);
+    private readonly RecordingLock _lock = new();
 
     public ImportedCertificateServiceTests()
     {
@@ -160,6 +161,59 @@ public sealed class ImportedCertificateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_BindingRolledBack_KeepsACertificateThatWasAlreadyInstalled()
+    {
+        _iis.Setup(value => value.ConfigureHttpsBindingsAsync(Site, It.IsAny<IReadOnlyList<string>>(), It.IsAny<string>(), "My", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IisBindingException("HTTPS verification failed", previousBindingsRestored: true, new InvalidOperationException()));
+        var (certificate, key) = _ca.IssueWithNewKey("shop.example.com");
+        using (certificate)
+        using (key)
+        {
+            // Already in LocalMachine\My, for example bound to another site.
+            _store.Installed[certificate.Thumbprint] = new InstalledCertificate(certificate.Thumbprint, certificate.NotBefore, certificate.NotAfter, true);
+
+            await Assert.ThrowsAsync<IisBindingException>(() =>
+                CreateService().ImportPfxAsync(Site, [], _ca.ExportPfx(certificate, key, "secret"), "secret"));
+
+            Assert.Null(_store.Removed);
+        }
+    }
+
+    [Fact]
+    public async Task CancelOrReplaceRequest_WhoseCertificateIsAlreadyInstalled_KeepsTheKey()
+    {
+        // As after a completion interrupted between installing and removing the request, then recovered.
+        var service = CreateService();
+        var request = await service.CreateRequestAsync(Site, ["shop.example.com"]);
+        _store.KeyNamesToDelete.Add(request.KeyName);
+        using var issued = _ca.Issue(request.CsrPem);
+        _store.Certificates[issued.Thumbprint] = issued.RawData;
+        _managed.Add(new ManagedCertificate(Site, ["shop.example.com"], "", issued.Thumbprint, issued.NotBefore, issued.NotAfter,
+            Source: CertificateSource.Imported));
+
+        var replacement = await service.CreateRequestAsync(Site, ["shop.example.com"]);
+        Assert.NotNull(_keys.Open(request.KeyName));
+
+        await service.CancelRequestAsync(Site);
+        Assert.Null(_keys.Open(replacement.KeyName));
+        Assert.NotNull(_keys.Open(request.KeyName));
+    }
+
+    [Fact]
+    public async Task RequestLifecycle_RunsUnderTheSiteLock()
+    {
+        var service = CreateService();
+        var request = await service.CreateRequestAsync(Site, ["shop.example.com"]);
+        using var issued = _ca.Issue(request.CsrPem);
+        await service.CompleteRequestAsync(Site, issued.RawData, Encoding.ASCII.GetBytes(_ca.ChainPem));
+        await service.CreateRequestAsync(Site, ["shop.example.com"]);
+        await service.CancelRequestAsync(Site);
+
+        // One acquisition per operation; RecordingLock also fails on any nested acquisition.
+        Assert.Equal([Site, Site, Site, Site], _lock.Acquisitions);
+    }
+
+    [Fact]
     public async Task Import_CertificateWithoutKey_ExplainsThatAPfxIsNeeded()
     {
         var (certificate, key) = _ca.IssueWithNewKey("shop.example.com");
@@ -253,8 +307,35 @@ public sealed class ImportedCertificateServiceTests : IDisposable
             .Returns(Task.CompletedTask);
         return new ImportedCertificateService(
             _iis.Object, _store, managed.Object, _pending, _keys,
-            new NoOpCertificateOperationLock(), new NoOpCertificateTransactionJournal(),
+            _lock, new NoOpCertificateTransactionJournal(),
             trustedRootsForTesting: [_ca.Root]);
+    }
+
+    /// <summary>Records each acquisition and fails if one is attempted while the lock is held (it is not reentrant).</summary>
+    private sealed class RecordingLock : ICertificateOperationLock
+    {
+        private bool _held;
+
+        public List<string> Acquisitions { get; } = [];
+
+        public Task<IAsyncDisposable> AcquireAsync(string siteName, CancellationToken cancellationToken = default)
+        {
+            Assert.False(_held, $"The lock for '{siteName}' was acquired while already held.");
+            _held = true;
+            Acquisitions.Add(siteName);
+            return Task.FromResult<IAsyncDisposable>(new Scope(this));
+        }
+
+        public IAsyncDisposable? TryAcquire(string siteName) => throw new NotSupportedException();
+
+        private sealed class Scope(RecordingLock owner) : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync()
+            {
+                owner._held = false;
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     /// <summary>Records what would be written to LocalMachine\My and \CA, without touching them.</summary>
@@ -268,11 +349,14 @@ public sealed class ImportedCertificateServiceTests : IDisposable
         public List<string> Intermediates { get; } = [];
         public List<string> KeyNamesToDelete { get; } = [];
 
+        /// <summary>Public certificates present in the store, as <see cref="OpenAsync"/> returns them.</summary>
+        public Dictionary<string, byte[]> Certificates { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public Task<InstalledCertificate?> FindByThumbprintAsync(string thumbprint, CancellationToken cancellationToken = default) =>
             Task.FromResult(Installed.GetValueOrDefault(thumbprint));
 
         public Task<X509Certificate2?> OpenAsync(string thumbprint, CancellationToken cancellationToken = default) =>
-            Task.FromResult<X509Certificate2?>(null);
+            Task.FromResult(Certificates.TryGetValue(thumbprint, out var raw) ? X509CertificateLoader.LoadCertificate(raw) : null);
 
         public Task<InstalledCertificate> ImportPfxAsync(byte[] pfxBytes, string password, string friendlyName, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -288,6 +372,9 @@ public sealed class ImportedCertificateServiceTests : IDisposable
         {
             Added = certificateWithKey.Thumbprint;
             AddedWithPrivateKey = certificateWithKey.HasPrivateKey;
+            Certificates[certificateWithKey.Thumbprint] = certificateWithKey.RawData;
+            // The completed request's key now belongs to the certificate; the test deletes it afterwards.
+            if (certificateWithKey.GetRSAPrivateKey() is RSACng { Key.KeyName: { } keyName }) KeyNamesToDelete.Add(keyName);
             return Task.FromResult(new InstalledCertificate(
                 certificateWithKey.Thumbprint, certificateWithKey.NotBefore, certificateWithKey.NotAfter, certificateWithKey.HasPrivateKey));
         }

@@ -197,10 +197,35 @@ internal sealed class ImportedCertificateService(
         }
 
         var request = new PendingCertificateRequest(site.Name, normalizedHosts, keyName, keyType, csr, DateTimeOffset.UtcNow);
-        var replaced = await pendingRequests.SaveAsync(request, CancellationToken.None).ConfigureAwait(false);
-        if (replaced is not null)
+        // Held so a completion of the request being replaced cannot run at the same time.
+        IAsyncDisposable siteLock;
+        PendingCertificateRequest? replaced;
+        try
         {
-            DeleteKeyQuietly(replaced.KeyName);
+            siteLock = await operationLock.AcquireAsync(site.Name, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            DeleteKeyQuietly(keyName);
+            throw;
+        }
+
+        await using (siteLock.ConfigureAwait(false))
+        {
+            try
+            {
+                replaced = await pendingRequests.SaveAsync(request, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                DeleteKeyQuietly(keyName);
+                throw;
+            }
+
+            if (replaced is not null)
+            {
+                await ReleaseRequestKeyAsync(replaced, CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         return request;
@@ -211,10 +236,14 @@ internal sealed class ImportedCertificateService(
 
     public async Task CancelRequestAsync(string siteName, CancellationToken cancellationToken = default)
     {
-        var request = await pendingRequests.GetAsync(siteName, cancellationToken).ConfigureAwait(false)
+        // Looked up first so a request can be cancelled even after its IIS site was deleted.
+        var found = await pendingRequests.GetAsync(siteName, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"IIS site '{siteName}' has no pending certificate request.");
+        await using var siteLock = await operationLock.AcquireAsync(found.SiteName, cancellationToken).ConfigureAwait(false);
+        var request = await pendingRequests.GetAsync(found.SiteName, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"IIS site '{siteName}' has no pending certificate request.");
         await pendingRequests.RemoveAsync(request.SiteName, CancellationToken.None).ConfigureAwait(false);
-        DeleteKeyQuietly(request.KeyName);
+        await ReleaseRequestKeyAsync(request, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task<ImportResult> CompleteRequestAsync(
@@ -226,10 +255,13 @@ internal sealed class ImportedCertificateService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(certificateFile);
-        var request = await pendingRequests.GetAsync(siteName, cancellationToken).ConfigureAwait(false)
+        var site = await FindSiteAsync(siteName, cancellationToken).ConfigureAwait(false);
+
+        // Held for the whole completion, so the request and its key cannot be replaced or cancelled meanwhile.
+        await using var siteLock = await operationLock.AcquireAsync(site.Name, cancellationToken).ConfigureAwait(false);
+        var request = await pendingRequests.GetAsync(site.Name, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"IIS site '{siteName}' has no pending certificate request. Create one with 'csr', or use 'import' for a PFX file.");
-        var site = await FindSiteAsync(request.SiteName, cancellationToken).ConfigureAwait(false);
         var certificates = CertificateInspector.LoadCertificates(certificateFile).ToList();
         if (chainFile is not null)
         {
@@ -326,6 +358,7 @@ internal sealed class ImportedCertificateService(
             }
 
             ThrowIfInvalid(leaf, targetHosts, intermediates);
+            await using var siteLock = await operationLock.AcquireAsync(site.Name, cancellationToken).ConfigureAwait(false);
             return await InstallAsync(
                     site,
                     targetHosts,
@@ -349,6 +382,7 @@ internal sealed class ImportedCertificateService(
     /// <summary>
     /// The same safe swap as ACME issuance: journal first, then the store, then IIS with live HTTPS verification and
     /// automatic rollback, then the record. The previous certificate is never deleted, because SSLense did not obtain it.
+    /// The caller holds the site's operation lock.
     /// </summary>
     private async Task<ImportResult> InstallAsync(
         IisSite site,
@@ -360,7 +394,6 @@ internal sealed class ImportedCertificateService(
         IProgress<ProgressEvent>? progress,
         CancellationToken cancellationToken)
     {
-        await using var siteLock = await operationLock.AcquireAsync(site.Name, cancellationToken).ConfigureAwait(false);
         var existing = await FindRecordAsync(site.Name, cancellationToken).ConfigureAwait(false);
         if (existing?.Source == CertificateSource.Acme && !force)
         {
@@ -392,6 +425,8 @@ internal sealed class ImportedCertificateService(
         var transaction = await journal.BeginAsync(record, existing?.Thumbprint, CancellationToken.None).ConfigureAwait(false);
         progress?.Report(new ProgressEvent("install", "Importing the certificate into LocalMachine\\My with a non-exportable key."));
         await certificateStore.AddIntermediatesAsync(intermediates, cancellationToken).ConfigureAwait(false);
+        // The same certificate may already be installed, for example bound to another site; a rollback must leave it.
+        var alreadyInStore = await certificateStore.FindByThumbprintAsync(thumbprint, cancellationToken).ConfigureAwait(false) is not null;
         var installed = await addToStore(cancellationToken).ConfigureAwait(false);
         await journal.UpdateStageAsync(transaction.Id, CertificateTransactionStage.CertificateImported, CancellationToken.None).ConfigureAwait(false);
         try
@@ -404,9 +439,13 @@ internal sealed class ImportedCertificateService(
         }
         catch (IisBindingException exception) when (exception.PreviousBindingsRestored)
         {
-            // The site is back on its previous certificate; the unused new one is removed. Its key is kept, so a
-            // completed request can be retried.
-            await certificateStore.RemoveAsync(installed.Thumbprint, CancellationToken.None).ConfigureAwait(false);
+            // The site is back on its previous certificate; the new one is removed only if this import added it. Its key
+            // is kept, so a completed request can be retried.
+            if (!alreadyInStore)
+            {
+                await certificateStore.RemoveAsync(installed.Thumbprint, CancellationToken.None).ConfigureAwait(false);
+            }
+
             await journal.CompleteAsync(transaction.Id, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
@@ -551,6 +590,41 @@ internal sealed class ImportedCertificateService(
     private static string Normalize(string thumbprint) => string.Concat(thumbprint.Where(Uri.IsHexDigit)).ToUpperInvariant();
 
     private static string FriendlyName(IReadOnlyList<string> hosts) => $"SSLense: {hosts[0]} (imported {DateTimeOffset.UtcNow:yyyy-MM-dd})";
+
+    /// <summary>
+    /// Deletes a replaced or cancelled request's key, unless an installed certificate uses it. That happens when a
+    /// completion was interrupted after installing and recovery finished the binding but not the request cleanup;
+    /// deleting the key then would break HTTPS for the site, and the key cannot be restored.
+    /// </summary>
+    private async Task ReleaseRequestKeyAsync(PendingCertificateRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var requestKey = CertificateRequest.LoadSigningRequestPem(request.CsrPem, HashAlgorithmName.SHA256)
+                .PublicKey.ExportSubjectPublicKeyInfo();
+            var sites = await iisService.GetSitesAsync(cancellationToken).ConfigureAwait(false);
+            var managed = await managedStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+            var thumbprints = managed.Select(record => record.Thumbprint)
+                .Concat(sites.SelectMany(site => site.Bindings).Select(binding => binding.CertificateThumbprint).OfType<string>())
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+            foreach (var thumbprint in thumbprints)
+            {
+                using var certificate = await certificateStore.OpenAsync(thumbprint, cancellationToken).ConfigureAwait(false);
+                if (certificate is not null &&
+                    certificate.PublicKey.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(requestKey))
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // When in doubt, keep the key: an orphaned key is harmless, a deleted one in use is not.
+            return;
+        }
+
+        DeleteKeyQuietly(request.KeyName);
+    }
 
     private void DeleteKeyQuietly(string keyName)
     {
