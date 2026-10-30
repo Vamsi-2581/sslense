@@ -26,10 +26,12 @@ public sealed class ImportedCertificateServiceTests : IDisposable
     private readonly List<ManagedCertificate> _managed = [];
     private readonly Mock<IIisService> _iis = new(MockBehavior.Strict);
     private readonly RecordingLock _lock = new();
+    private readonly JsonCertificateTransactionJournal _journal;
 
     public ImportedCertificateServiceTests()
     {
         _pending = new JsonPendingRequestStore(_files, @"C:\data\pending-requests.json", @"C:\data\pending-requests.lock");
+        _journal = new JsonCertificateTransactionJournal(_files, @"C:\data\transactions");
         _iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => [new IisSite(1, Site, "Started", @"C:\inetpub\shop", [
                 new IisBinding("http", "*", 80, "shop.example.com", null, null, false),
@@ -180,6 +182,37 @@ public sealed class ImportedCertificateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_FailingBeforeInstall_LeavesNothingForRecoveryToFinish()
+    {
+        var (certificate, key) = _ca.IssueWithNewKey("shop.example.com");
+        using (certificate)
+        using (key)
+        {
+            // Already installed for another site, so recovery would find it in the store.
+            _store.Installed[certificate.Thumbprint] = new InstalledCertificate(certificate.Thumbprint, certificate.NotBefore, certificate.NotAfter, true);
+            _store.FailIntermediates = true;
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                CreateService().ImportPfxAsync(Site, [], _ca.ExportPfx(certificate, key, "secret"), "secret"));
+
+            Assert.Empty(await _journal.GetPendingAsync());
+            Assert.Null(_store.Removed);
+        }
+    }
+
+    [Fact]
+    public async Task Complete_Succeeding_CompletesItsJournalEntry()
+    {
+        var service = CreateService();
+        var request = await service.CreateRequestAsync(Site, ["shop.example.com"]);
+        using var issued = _ca.Issue(request.CsrPem);
+
+        await service.CompleteRequestAsync(Site, issued.RawData, Encoding.ASCII.GetBytes(_ca.ChainPem));
+
+        Assert.Empty(await _journal.GetPendingAsync());
+    }
+
+    [Fact]
     public async Task CancelOrReplaceRequest_WhoseCertificateIsAlreadyInstalled_KeepsTheKey()
     {
         // As after a completion interrupted between installing and removing the request, then recovered.
@@ -307,7 +340,7 @@ public sealed class ImportedCertificateServiceTests : IDisposable
             .Returns(Task.CompletedTask);
         return new ImportedCertificateService(
             _iis.Object, _store, managed.Object, _pending, _keys,
-            _lock, new NoOpCertificateTransactionJournal(),
+            _lock, _journal,
             trustedRootsForTesting: [_ca.Root]);
     }
 
@@ -348,6 +381,7 @@ public sealed class ImportedCertificateServiceTests : IDisposable
         public string? Removed { get; private set; }
         public List<string> Intermediates { get; } = [];
         public List<string> KeyNamesToDelete { get; } = [];
+        public bool FailIntermediates { get; set; }
 
         /// <summary>Public certificates present in the store, as <see cref="OpenAsync"/> returns them.</summary>
         public Dictionary<string, byte[]> Certificates { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -381,6 +415,7 @@ public sealed class ImportedCertificateServiceTests : IDisposable
 
         public Task AddIntermediatesAsync(IReadOnlyList<X509Certificate2> intermediates, CancellationToken cancellationToken = default)
         {
+            if (FailIntermediates) throw new OperationCanceledException();
             Intermediates.AddRange(intermediates.Select(value => value.Thumbprint));
             return Task.CompletedTask;
         }

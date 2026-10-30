@@ -422,12 +422,29 @@ internal sealed class ImportedCertificateService(
             Source: CertificateSource.Imported,
             Issuer: leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: true));
 
-        var transaction = await journal.BeginAsync(record, existing?.Thumbprint, CancellationToken.None).ConfigureAwait(false);
-        progress?.Report(new ProgressEvent("install", "Importing the certificate into LocalMachine\\My with a non-exportable key."));
-        await certificateStore.AddIntermediatesAsync(intermediates, cancellationToken).ConfigureAwait(false);
         // The same certificate may already be installed, for example bound to another site; a rollback must leave it.
         var alreadyInStore = await certificateStore.FindByThumbprintAsync(thumbprint, cancellationToken).ConfigureAwait(false) is not null;
-        var installed = await addToStore(cancellationToken).ConfigureAwait(false);
+        var transaction = await journal.BeginAsync(record, existing?.Thumbprint, CancellationToken.None).ConfigureAwait(false);
+        InstalledCertificate installed;
+        try
+        {
+            progress?.Report(new ProgressEvent("install", "Importing the certificate into LocalMachine\\My with a non-exportable key."));
+            await certificateStore.AddIntermediatesAsync(intermediates, cancellationToken).ConfigureAwait(false);
+            installed = await addToStore(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Failed before installing: retire the entry, or recovery would find the certificate (possibly one that was
+            // already there) and finish an import that was reported as failed.
+            if (!alreadyInStore)
+            {
+                await RemoveQuietlyAsync(thumbprint).ConfigureAwait(false);
+            }
+
+            await journal.CompleteAsync(transaction.Id, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
         await journal.UpdateStageAsync(transaction.Id, CertificateTransactionStage.CertificateImported, CancellationToken.None).ConfigureAwait(false);
         try
         {
@@ -624,6 +641,18 @@ internal sealed class ImportedCertificateService(
         }
 
         DeleteKeyQuietly(request.KeyName);
+    }
+
+    private async Task RemoveQuietlyAsync(string thumbprint)
+    {
+        try
+        {
+            await certificateStore.RemoveAsync(thumbprint, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is CryptographicException or InvalidOperationException)
+        {
+            // Usually it was never added; anything left is reported by the health check, not worth masking the failure.
+        }
     }
 
     private void DeleteKeyQuietly(string keyName)
