@@ -301,7 +301,7 @@ internal sealed class ImportedCertificateService(
         }
         catch (CryptographicException exception)
         {
-            throw new InvalidOperationException("The PFX could not be opened. Check the file and its password.", exception);
+            throw await ExplainUnreadablePfxAsync(pfxBytes, exception, cancellationToken).ConfigureAwait(false);
         }
 
         try
@@ -461,6 +461,57 @@ internal sealed class ImportedCertificateService(
         request.CertificateExtensions.Add(names.Build());
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], critical: false));
         return request;
+    }
+
+    /// <summary>
+    /// The usual mistake is choosing the provider's .cer or .crt, which has no private key. Say so, and say which
+    /// path fits: completing this server's pending request, or exporting a PFX from where the key was created.
+    /// </summary>
+    private async Task<Exception> ExplainUnreadablePfxAsync(byte[] file, CryptographicException exception, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<X509Certificate2> certificates;
+        try
+        {
+            certificates = CertificateInspector.LoadCertificates(file);
+        }
+        catch (InvalidDataException)
+        {
+            return new InvalidOperationException("The PFX could not be opened. Check the file and its password.", exception);
+        }
+
+        try
+        {
+            foreach (var request in await pendingRequests.GetAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var requestKey = CertificateRequest.LoadSigningRequestPem(request.CsrPem, HashAlgorithmName.SHA256)
+                    .PublicKey.ExportSubjectPublicKeyInfo();
+                if (certificates.Any(certificate =>
+                        certificate.PublicKey.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(requestKey)))
+                {
+                    return new InvalidOperationException(
+                        $"This is the certificate issued for the pending request of IIS site '{request.SiteName}'. It has no " +
+                        "private key of its own: the key is already on this server. Install it with 'Complete a request' " +
+                        $"(in the CLI: complete --site \"{request.SiteName}\" --certificate <file>).");
+                }
+            }
+
+            var leaf = certificates.FirstOrDefault(certificate => !CertificateInspector.IsCertificateAuthority(certificate))
+                ?? certificates[0];
+            return new InvalidOperationException(
+                $"This file is a certificate without its private key ({CertificateInspector.Describe(leaf)}), so it cannot be " +
+                "imported on its own; a PFX contains both. If SSLense created the request on this server, use 'Complete a " +
+                "request'. Otherwise, on the server where the request was created, export the certificate with its private " +
+                "key as a PFX (certlm.msc, Personal, Certificates, the certificate, All Tasks, Export, 'Yes, export the " +
+                "private key') and import that PFX. If your provider created the key for you, download the PFX or the key " +
+                "file from them.");
+        }
+        finally
+        {
+            foreach (var certificate in certificates)
+            {
+                certificate.Dispose();
+            }
+        }
     }
 
     private async Task<IisSite> FindSiteAsync(string siteName, CancellationToken cancellationToken)

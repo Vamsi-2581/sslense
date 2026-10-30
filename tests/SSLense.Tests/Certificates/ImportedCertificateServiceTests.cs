@@ -160,6 +160,36 @@ public sealed class ImportedCertificateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_CertificateWithoutKey_ExplainsThatAPfxIsNeeded()
+    {
+        var (certificate, key) = _ca.IssueWithNewKey("shop.example.com");
+        using (certificate)
+        using (key)
+        {
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                CreateService().ImportPfxAsync(Site, [], certificate.RawData, ""));
+
+            Assert.Contains("without its private key", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("export the certificate with its private key as a PFX", exception.Message, StringComparison.Ordinal);
+            Assert.Null(_store.Added);
+        }
+    }
+
+    [Fact]
+    public async Task Import_CertificateForAPendingRequest_PointsToComplete()
+    {
+        var service = CreateService();
+        var request = await service.CreateRequestAsync(Site, ["shop.example.com"]);
+        using var issued = _ca.Issue(request.CsrPem);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ImportPfxAsync(Site, [], Encoding.ASCII.GetBytes(issued.ExportCertificatePem()), ""));
+
+        Assert.Contains("pending request of IIS site 'Shop'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Complete a request", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Adopt_RecordsTheBoundCertificateWithoutChangingIis()
     {
         var (certificate, key) = _ca.IssueWithNewKey("shop.example.com");
