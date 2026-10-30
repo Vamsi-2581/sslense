@@ -301,6 +301,22 @@ public sealed class ImportedCertificateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Adopt_BindingOnAnotherPort_IsRefused()
+    {
+        _iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, Site, "Started", @"C:\inetpub\shop", [
+                new IisBinding("https", "*", 443, "shop.example.com", "AABB", "My", true),
+                new IisBinding("https", "*", 8443, "shop.example.com", "AABB", "My", true)
+            ])]);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().AdoptAsync(Site));
+
+        Assert.Contains("shop.example.com:8443", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("port 443 only", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(_managed);
+    }
+
+    [Fact]
     public async Task CancelRequest_DeletesTheKey()
     {
         var service = CreateService();

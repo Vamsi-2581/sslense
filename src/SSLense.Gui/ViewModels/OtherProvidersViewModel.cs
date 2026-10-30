@@ -164,8 +164,8 @@ public partial class OtherProvidersViewModel : ObservableObject
 
     private Task CreateRequestAsync(CancellationToken cancellationToken) => RunAsync(async token =>
     {
-        var request = await _service.CreateRequestAsync(RequestSite!.Name, ParseHosts(RequestHosts), SelectedKeyType.Id, token)
-            .ConfigureAwait(true);
+        var (siteName, hosts, keyType) = (RequestSite!.Name, ParseHosts(RequestHosts), SelectedKeyType.Id);
+        var request = await OffUiThread(() => _service.CreateRequestAsync(siteName, hosts, keyType, token)).ConfigureAwait(true);
         await LoadPendingAsync(request.SiteName, token).ConfigureAwait(true);
         ResultMessage = $"Request created for {string.Join(", ", request.Hosts)}. Copy or save it below and submit it to your " +
                         "certificate provider. When the certificate is issued, complete the request here.";
@@ -176,7 +176,8 @@ public partial class OtherProvidersViewModel : ObservableObject
         var site = SelectedPending!.SiteName;
         var certificate = await File.ReadAllBytesAsync(CertificatePath, token).ConfigureAwait(true);
         var chain = ChainPath.Length > 0 ? await File.ReadAllBytesAsync(ChainPath, token).ConfigureAwait(true) : null;
-        var result = await _service.CompleteRequestAsync(site, certificate, chain, CompleteForce, CreateProgress(), token)
+        var (force, progress) = (CompleteForce, CreateProgress());
+        var result = await OffUiThread(() => _service.CompleteRequestAsync(site, certificate, chain, force, progress, token))
             .ConfigureAwait(true);
         ShowResult(result);
         await LoadAsync(token).ConfigureAwait(true);
@@ -195,8 +196,8 @@ public partial class OtherProvidersViewModel : ObservableObject
         var pfx = await File.ReadAllBytesAsync(PfxPath, token).ConfigureAwait(true);
         try
         {
-            var result = await _service.ImportPfxAsync(
-                    ImportSite!.Name, ParseHosts(ImportHosts), pfx, PfxPassword, ImportForce, CreateProgress(), token)
+            var (siteName, hosts, password, force, progress) = (ImportSite!.Name, ParseHosts(ImportHosts), PfxPassword, ImportForce, CreateProgress());
+            var result = await OffUiThread(() => _service.ImportPfxAsync(siteName, hosts, pfx, password, force, progress, token))
                 .ConfigureAwait(true);
             ShowResult(result);
             PfxPath = string.Empty;
@@ -214,11 +215,18 @@ public partial class OtherProvidersViewModel : ObservableObject
     private Task AdoptAsync(CancellationToken cancellationToken) => RunAsync(async token =>
     {
         var binding = SelectedBinding!.Binding;
-        var record = await _service.AdoptAsync(binding.SiteName, binding.Thumbprint, token).ConfigureAwait(true);
+        var record = await OffUiThread(() => _service.AdoptAsync(binding.SiteName, binding.Thumbprint, token)).ConfigureAwait(true);
         ResultMessage = $"SSLense now monitors the certificate for '{record.SiteName}' ({string.Join(", ", record.Hosts)}), " +
                         $"expiring {record.NotAfter.LocalDateTime:dd MMM yyyy}. IIS was not changed.";
         await LoadAsync(token).ConfigureAwait(true);
     }, cancellationToken);
+
+    /// <summary>
+    /// Key generation, PFX parsing and chain building are synchronous inside Core and can take seconds (chain building may
+    /// fetch intermediates), so they run on the thread pool to keep the window responsive. Progress is created on the UI
+    /// thread beforehand, so its reports still arrive there.
+    /// </summary>
+    private static Task<T> OffUiThread<T>(Func<Task<T>> operation) => Task.Run(operation);
 
     private void ShowResult(ImportResult result)
     {

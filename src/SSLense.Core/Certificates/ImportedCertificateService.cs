@@ -125,6 +125,19 @@ internal sealed class ImportedCertificateService(
                               binding.CertificateThumbprint is not null &&
                               (thumbprint is null || string.Equals(Normalize(binding.CertificateThumbprint), Normalize(thumbprint), StringComparison.Ordinal)))
             .ToArray();
+        // Replacement and health checks manage port 443 only; adopting another port would leave it on the old
+        // certificate after a "successful" replacement.
+        var otherPorts = bindings.Where(binding => binding.Port != 443).ToArray();
+        if (otherPorts.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"IIS site '{site.Name}' serves this certificate on port " +
+                $"{string.Join(", ", otherPorts.Select(binding => binding.Port).Distinct())} " +
+                $"({string.Join(", ", otherPorts.Select(binding => $"{binding.HostName}:{binding.Port}"))}). SSLense manages HTTPS " +
+                "bindings on port 443 only, so it could not replace the certificate there. Monitor this certificate another way, " +
+                "or move the binding to port 443.");
+        }
+
         var thumbprints = bindings.Select(binding => binding.CertificateThumbprint!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (thumbprints.Length == 0)
         {
