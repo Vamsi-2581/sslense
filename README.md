@@ -118,7 +118,7 @@ SSLense removes an old certificate only after the replacement binding is confirm
 
 ### Certificates from other providers (bring your own)
 
-Some sites use a certificate bought from a provider such as 123-reg, Sectigo or DigiCert. SSLense installs and binds these certificates with the same safeguards (validation first, HTTPS verification, automatic rollback) and reminds you to order the next one. It never tries to renew them itself.
+Some sites use a certificate bought from a provider such as 123-reg, Sectigo or DigiCert. In the desktop app, use the **Other Providers** page. SSLense installs and binds these certificates with the same safeguards (validation first, HTTPS verification, automatic rollback) and reminds you to order the next one. It never tries to renew them itself.
 
 Order a certificate with a request (CSR) created on this server. The private key is a non-exportable machine key that never leaves the server:
 
@@ -276,6 +276,7 @@ Windows displays an administrator elevation prompt because the application manif
 - A live log viewer with level filtering and access to the log folder
 - A visual three-step issuance wizard with IIS selection, guarded environment choice, pre-flight checks, live progress, and cancellation
 - Certificate details, renewal, confirmed removal, bindings, issuer, validity, and recent logs
+- An **Other Providers** page for certificates bought elsewhere: create a request (CSR) to copy or save, complete it with the issued certificate and bundle, import a PFX, or adopt a certificate already bound in IIS. Imported certificates show as "Imported" on the Dashboard, with "Order renewal" when 30 days or fewer remain
 - General, SMTP/webhook, and Windows Service settings
 
 Staging remains the wizard default. Production requires a separate selection and acknowledgement before the Issue button is enabled. Use **Issue certificate** on the Dashboard to open the wizard. Removing a certificate requires confirmation and removes only matching HTTPS bindings; a certificate still used by another IIS site is retained in the Windows certificate store.

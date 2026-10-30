@@ -126,7 +126,7 @@ internal sealed class RenewalService : IRenewalService
                     false,
                     true,
                     "Skipped: imported certificate, renewed manually. Order the replacement from " +
-                    $"{certificate.Issuer ?? "the issuer"} using 'SSLense.Cli csr --site \"{certificate.SiteName}\"', then 'complete'.",
+                    $"{certificate.Issuer ?? "the issuer"} with a certificate request: Other Providers in the app, or 'SSLense.Cli csr --site \"{certificate.SiteName}\"' then 'complete'.",
                     certificate.Thumbprint));
                 continue;
             }

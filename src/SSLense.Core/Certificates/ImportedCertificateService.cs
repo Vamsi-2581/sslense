@@ -117,7 +117,7 @@ internal sealed class ImportedCertificateService(
         {
             throw new InvalidOperationException(
                 $"IIS site '{site.Name}' is already managed by SSLense (certificate {existing.Thumbprint}). " +
-                "Use 'import' or 'complete' to replace its certificate.");
+                "Import a certificate or complete a request to replace it.");
         }
 
         var bindings = site.Bindings
@@ -137,7 +137,7 @@ internal sealed class ImportedCertificateService(
         {
             throw new InvalidOperationException(
                 $"IIS site '{site.Name}' uses several certificates ({string.Join(", ", thumbprints)}). " +
-                "Choose one with --thumbprint; SSLense manages one certificate per site.");
+                "Choose which one to adopt (--thumbprint in the CLI); SSLense manages one certificate per site.");
         }
 
         var certificate = await certificateStore.FindByThumbprintAsync(thumbprints[0], cancellationToken).ConfigureAwait(false)
@@ -322,7 +322,7 @@ internal sealed class ImportedCertificateService(
             {
                 throw new InvalidOperationException(
                     $"None of IIS site '{site.Name}''s binding host names is covered by the certificate " +
-                    $"({string.Join(", ", dnsNames)}). Pass the host names to bind with --hosts.");
+                    $"({string.Join(", ", dnsNames)}). Enter the host names to bind (--hosts in the CLI).");
             }
 
             ThrowIfInvalid(leaf, targetHosts, intermediates);
@@ -366,7 +366,7 @@ internal sealed class ImportedCertificateService(
         {
             throw new InvalidOperationException(
                 $"IIS site '{site.Name}' has a certificate that SSLense renews automatically. Importing replaces it with " +
-                "one you must renew manually; add --force to confirm.");
+                "one you must renew manually. Confirm the replacement to continue (--force in the CLI).");
         }
 
         var thumbprint = Normalize(leaf.Thumbprint);

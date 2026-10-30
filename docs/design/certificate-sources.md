@@ -23,11 +23,11 @@ Everything SSLense already does for Let's Encrypt certificates (safe binding swa
 
 | Task | GUI | CLI |
 |---|---|---|
-| Create a certificate request: the private key is generated in the Windows machine key store and never leaves the server | **Certificates → Request certificate (CSR)** | `SSLense.Cli csr --site <site> --hosts <hosts> [--key rsa2048\|rsa3072\|ec256] [--out request.csr]` |
-| Complete the request with the certificate the CA issued (and its intermediate bundle) | **Complete request** on the pending item | `SSLense.Cli complete --site <site> --certificate issued.crt [--chain bundle.crt]` |
-| Import a certificate that already has its key (PFX) | **Import certificate** | `SSLense.Cli import --site <site> --pfx file.pfx` (password prompted) |
-| Start monitoring a certificate already bound in IIS, without reinstalling | **Adopt** on the discovered list | `SSLense.Cli adopt --site <site>` / `SSLense.Cli discover` |
-| Replace it when the next certificate arrives | **Replace** (new CSR, then Complete) | `csr` then `complete` again, or `import` again (replacing a certificate SSLense renews itself needs `--force`) |
+| Create a certificate request: the private key is generated in the Windows machine key store and never leaves the server | **Other Providers → Create request** | `SSLense.Cli csr --site <site> --hosts <hosts> [--key rsa2048\|rsa3072\|ec256] [--out request.csr]` |
+| Complete the request with the certificate the CA issued (and its intermediate bundle) | **Install certificate** on the selected pending request | `SSLense.Cli complete --site <site> --certificate issued.crt [--chain bundle.crt]` |
+| Import a certificate that already has its key (PFX) | **Import and bind** | `SSLense.Cli import --site <site> --pfx file.pfx` (password prompted) |
+| Start monitoring a certificate already bound in IIS, without reinstalling | **Adopt selected** on the HTTPS bindings list | `SSLense.Cli adopt --site <site>` / `SSLense.Cli discover` |
+| Replace it when the next certificate arrives | A new request, then **Install certificate** | `csr` then `complete` again, or `import` again (replacing a certificate SSLense renews itself needs `--force`) |
 
 What happens on install, for every path above:
 
@@ -90,7 +90,7 @@ In code, `AcmeEnvironment` (an enum with two hard-coded Let's Encrypt URLs, used
 
 ## 4. Product surfaces
 
-- **GUI:** the Dashboard and Details show source, CA and issuer per certificate. A new **Certificates** area adds Request (CSR), Complete, Import, Adopt and Replace. The Issue wizard gains a CA picker (Let's Encrypt staging stays the default). Settings gains **Certificate authorities** (add from preset, EAB fields, test connection, remove).
+- **GUI:** the Dashboard and Details show source, CA and issuer per certificate. A new **Other Providers** page adds Request (CSR), Complete, Import and Adopt; replacing is a new request or import. The Issue wizard gains a CA picker (Let's Encrypt staging stays the default). Settings gains **Certificate authorities** (add from preset, EAB fields, test connection, remove).
 - **CLI:** `csr`, `complete`, `import`, `discover`, `adopt`, `ca add|list|remove|test`, and `--ca` on `issue`. `status` shows source and issuer.
 - **Health check:** CA directory reachability per profile in use; the imported-certificate checks in 2.1.
 - **Diagnostics bundle:** profiles included with EAB keys and account keys redacted; the seeded-secret test is extended with an EAB HMAC key.
@@ -116,7 +116,7 @@ In code, `AcmeEnvironment` (an enum with two hard-coded Let's Encrypt URLs, used
 |---|---|---|
 | 1 | Data model, `CertificateAuthority` profiles replacing `AcmeEnvironment`, migrations; no visible change. **Done.** | Internal |
 | 2 | Bring your own certificate: import, adopt, CSR and complete, replace; reminders; health checks; CLI. **Done.** | CLI |
-| 3 | GUI for step 2 | GUI |
+| 3 | GUI for step 2. **Done.** | GUI |
 | 4 | Any ACME CA: profiles, presets, EAB, guards, `--ca`; health and diagnostics; CLI and GUI | Both |
 | 5 | Pebble EAB tests in CI, documentation, website and roadmap updates | Docs |
 

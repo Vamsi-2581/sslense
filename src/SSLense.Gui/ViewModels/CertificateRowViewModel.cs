@@ -1,4 +1,5 @@
 using SSLense.Core.Acme;
+using SSLense.Core.Config;
 using SSLense.Core.Renewal;
 
 namespace SSLense.Gui.ViewModels;
@@ -12,7 +13,12 @@ public sealed class CertificateRowViewModel
         Expiry = status.NotAfter;
         DaysRemaining = status.DaysRemaining;
         Thumbprint = status.Thumbprint;
-        Environment = status.IsTestAuthority ? "Staging" : "Production";
+        IsImported = status.Source == CertificateSource.Imported;
+        Environment = IsImported
+            ? "Imported"
+            : CertificateAuthorities.IsBuiltIn(status.AuthorityId)
+                ? status.IsTestAuthority ? "Staging" : "Production"
+                : status.AuthorityName;
 
         if (status.LastRenewalSucceeded == false)
         {
@@ -26,7 +32,8 @@ public sealed class CertificateRowViewModel
         }
         else if (status.DaysRemaining <= 30)
         {
-            Status = "Renew soon";
+            // SSLense cannot renew an imported certificate; the administrator orders the next one.
+            Status = IsImported ? "Order renewal" : "Renew soon";
             StatusKey = "Amber";
         }
         else
@@ -47,6 +54,8 @@ public sealed class CertificateRowViewModel
     public string Thumbprint { get; }
 
     public string Environment { get; }
+
+    public bool IsImported { get; }
 
     public string Status { get; }
 

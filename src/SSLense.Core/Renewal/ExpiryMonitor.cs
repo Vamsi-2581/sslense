@@ -94,8 +94,9 @@ internal sealed class ExpiryMonitor(
             $"SSLense: order a replacement certificate for {certificate.SiteName} ({daysLeft} days left)",
             $"The certificate for {certificate.SiteName} ({string.Join(", ", certificate.Hosts)}) from {issuer} expires at " +
             $"{certificate.NotAfter:O}. SSLense cannot renew it automatically because it was obtained outside SSLense.{Environment.NewLine}" +
-            $"To replace it: run 'SSLense.Cli csr --site \"{certificate.SiteName}\"', submit the request to {issuer}, then run " +
-            $"'SSLense.Cli complete --site \"{certificate.SiteName}\" --certificate <issued file>'. " +
+            "To replace it: create a certificate request on the Other Providers page of the SSLense app " +
+            $"(or run 'SSLense.Cli csr --site \"{certificate.SiteName}\"'), submit it to {issuer}, then complete the request " +
+            "with the issued certificate. " +
             "SSLense swaps the binding safely and keeps the current certificate until the new one is confirmed.",
             days <= 7 ? NotificationSeverity.Error : NotificationSeverity.Warning);
         try

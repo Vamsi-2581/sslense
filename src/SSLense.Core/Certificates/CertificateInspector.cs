@@ -108,7 +108,7 @@ internal static class CertificateInspector
         var statuses = chain.ChainStatus.Select(status => status.Status).ToHashSet();
         return statuses.Contains(X509ChainStatusFlags.PartialChain)
             ? "The certificate chain is incomplete. Add the intermediate certificate bundle from your certificate " +
-              "provider (often named ca-bundle, chain, or intermediate) with --chain."
+              "provider (often named ca-bundle, chain, or intermediate) as the chain file (--chain in the CLI)."
             : statuses.Contains(X509ChainStatusFlags.UntrustedRoot)
                 ? "The certificate chains to a root that this server does not trust. Install the issuer's root " +
                   "certificate in the Trusted Root Certification Authorities store if it is your own internal CA."

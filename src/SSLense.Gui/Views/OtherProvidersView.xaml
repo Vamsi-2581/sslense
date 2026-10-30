@@ -1,0 +1,111 @@
+<UserControl x:Class="SSLense.Gui.Views.OtherProvidersView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <UserControl.Resources><BooleanToVisibilityConverter x:Key="BoolToVisibility"/></UserControl.Resources>
+ <ScrollViewer VerticalScrollBarVisibility="Auto">
+  <StackPanel>
+   <DockPanel Margin="0,0,0,18">
+    <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" VerticalAlignment="Top"/>
+    <StackPanel>
+     <TextBlock Text="Other providers" Style="{StaticResource PageTitle}"/>
+     <TextBlock Text="Certificates bought from providers such as 123-reg, Sectigo, or DigiCert. SSLense installs them safely and reminds you before they expire; you order each renewal from the provider." Style="{StaticResource PageSubtitle}" TextWrapping="Wrap"/>
+    </StackPanel>
+   </DockPanel>
+
+   <Border Margin="0,0,0,10"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource ErrorBanner}"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ErrorMessage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/></Border>
+   <Border Margin="0,0,0,10"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource SuccessBanner}"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ResultMessage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding ResultMessage}" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/></Border>
+
+   <GroupBox Header="1. Request a certificate" Margin="0,4,0,14"><StackPanel>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
+               Text="Creates a certificate signing request (CSR) to paste into the provider's order form. The private key is created in Windows on this server, cannot be exported, and never leaves it."/>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.4*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <StackPanel Margin="0,0,14,0"><TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding RequestSite}" DisplayMemberPath="Name" AutomationProperties.Name="Site for the request"/></StackPanel>
+     <StackPanel Grid.Column="1" Margin="0,0,14,0"><TextBlock Text="HOST NAMES (COMMA-SEPARATED; THE FIRST IS THE COMMON NAME)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding RequestHosts, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Host names for the request"/></StackPanel>
+     <StackPanel Grid.Column="2"><TextBlock Text="KEY TYPE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding KeyTypes}" SelectedItem="{Binding SelectedKeyType}" DisplayMemberPath="Label" AutomationProperties.Name="Key type"/></StackPanel>
+    </Grid>
+    <Button Content="Create request" Command="{Binding CreateRequestCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+   </StackPanel></GroupBox>
+
+   <GroupBox Header="2. Complete a request" Margin="0,0,0,14"><StackPanel>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"
+               Text="Requests waiting for a certificate from the provider. Select one to see its CSR again, or to install the certificate the provider issued."/>
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" ClipToBounds="True">
+     <Grid>
+      <DataGrid ItemsSource="{Binding PendingRequests}" SelectedItem="{Binding SelectedPending}" SelectionMode="Single" Height="130" AutomationProperties.Name="Pending requests">
+       <DataGrid.Columns>
+        <DataGridTextColumn Header="Site" Binding="{Binding SiteName}" Width="*"/>
+        <DataGridTextColumn Header="Host names" Binding="{Binding Hosts}" Width="2*"/>
+        <DataGridTextColumn Header="Key" Binding="{Binding KeyType}" Width="80"/>
+        <DataGridTextColumn Header="Created" Binding="{Binding Created, StringFormat={}{0:dd MMM yyyy HH:mm}}" Width="140"/>
+        <DataGridTextColumn Header="Days" Binding="{Binding AgeDays}" Width="60"/>
+       </DataGrid.Columns>
+      </DataGrid>
+      <TextBlock Text="No pending requests." HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+       <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding PendingRequests.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+      </TextBlock>
+     </Grid>
+    </Border>
+
+    <StackPanel Visibility="{Binding HasSelectedPending, Converter={StaticResource BoolToVisibility}}" Margin="0,16,0,0">
+     <DockPanel Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+       <Button Content="Copy" Click="OnCopyCsrClick" Margin="0,0,8,0"/>
+       <Button Content="Save as..." Click="OnSaveCsrClick"/>
+      </StackPanel>
+      <TextBlock Text="CERTIFICATE REQUEST (CSR)" Style="{StaticResource FieldLabel}" VerticalAlignment="Bottom"/>
+     </DockPanel>
+     <TextBox Text="{Binding SelectedCsr, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="11.5" Height="110"
+              TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" AutomationProperties.Name="Certificate request"/>
+
+     <TextBlock Text="CERTIFICATE FROM THE PROVIDER (.CRT, .CER, OR .PEM)" Style="{StaticResource FieldLabel}" Margin="0,16,0,6"/>
+     <DockPanel><Button DockPanel.Dock="Right" Content="Browse..." Click="OnBrowseCertificateClick" Margin="8,0,0,0"/><TextBox Text="{Binding CertificatePath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Certificate file"/></DockPanel>
+     <TextBlock Text="INTERMEDIATE BUNDLE (OFTEN NAMED CA-BUNDLE OR CHAIN; OPTIONAL IF INCLUDED ABOVE)" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/>
+     <DockPanel><Button DockPanel.Dock="Right" Content="Browse..." Click="OnBrowseChainClick" Margin="8,0,0,0"/><TextBox Text="{Binding ChainPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Intermediate bundle file"/></DockPanel>
+     <CheckBox Content="Replace a certificate that SSLense renews automatically from Let's Encrypt" IsChecked="{Binding CompleteForce}" Margin="0,12,0,0"/>
+     <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+      <Button Content="Install certificate" Command="{Binding CompleteCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+      <Button Content="Cancel request" Click="OnCancelRequestClick" Style="{StaticResource DangerButton}"/>
+     </StackPanel>
+    </StackPanel>
+   </StackPanel></GroupBox>
+
+   <GroupBox Header="Import a PFX file" Margin="0,0,0,14"><StackPanel>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
+               Text="For a certificate that already comes with its private key, for example exported from another server. Include the intermediate certificates in the PFX."/>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.6*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <StackPanel Margin="0,0,14,0"><TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding ImportSite}" DisplayMemberPath="Name" AutomationProperties.Name="Site to import into"/></StackPanel>
+     <StackPanel Grid.Column="1" Margin="0,0,14,0"><TextBlock Text="PFX FILE" Style="{StaticResource FieldLabel}"/><DockPanel><Button DockPanel.Dock="Right" Content="Browse..." Click="OnBrowsePfxClick" Margin="8,0,0,0"/><TextBox Text="{Binding PfxPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="PFX file"/></DockPanel></StackPanel>
+     <StackPanel Grid.Column="2"><TextBlock Text="PFX PASSWORD" Style="{StaticResource FieldLabel}"/><PasswordBox x:Name="PfxPasswordBox" PasswordChanged="OnPfxPasswordChanged" AutomationProperties.Name="PFX password"/></StackPanel>
+    </Grid>
+    <TextBlock Text="HOST NAMES TO BIND (OPTIONAL; DEFAULT: THE SITE'S HOST NAMES THE CERTIFICATE COVERS)" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/>
+    <TextBox Text="{Binding ImportHosts, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Host names to bind"/>
+    <CheckBox Content="Replace a certificate that SSLense renews automatically from Let's Encrypt" IsChecked="{Binding ImportForce}" Margin="0,12,0,0"/>
+    <Button Content="Import and bind" Command="{Binding ImportCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+   </StackPanel></GroupBox>
+
+   <GroupBox Header="Monitor a certificate already in IIS" Margin="0,0,0,14"><StackPanel>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"
+               Text="HTTPS bindings on this server. Adopting a certificate adds it to the dashboard and its expiry reminders without changing IIS."/>
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" ClipToBounds="True">
+     <DataGrid ItemsSource="{Binding Bindings}" SelectedItem="{Binding SelectedBinding}" SelectionMode="Single" Height="170" AutomationProperties.Name="HTTPS bindings">
+      <DataGrid.Columns>
+       <DataGridTextColumn Header="Site" Binding="{Binding SiteName}" Width="*"/>
+       <DataGridTextColumn Header="Binding" Binding="{Binding Address}" Width="1.4*"/>
+       <DataGridTextColumn Header="Issuer" Binding="{Binding Issuer}" Width="1.4*"/>
+       <DataGridTextColumn Header="Expires" Binding="{Binding Expires, StringFormat={}{0:dd MMM yyyy}}" Width="110"/>
+       <DataGridTextColumn Header="SSLense" Binding="{Binding Managed}" Width="90"/>
+      </DataGrid.Columns>
+     </DataGrid>
+    </Border>
+    <Button Content="Adopt selected" Command="{Binding AdoptCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+   </StackPanel></GroupBox>
+
+   <Border Style="{StaticResource Card}" Padding="0" ClipToBounds="True">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBlock Text="Operation activity" FontWeight="SemiBold" Margin="14,10"/>
+     <ListBox Grid.Row="1" ItemsSource="{Binding ProgressLines}" Style="{StaticResource ConsoleList}" Height="150"/>
+    </Grid>
+   </Border>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>
