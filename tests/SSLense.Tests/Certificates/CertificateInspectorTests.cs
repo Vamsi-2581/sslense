@@ -48,6 +48,21 @@ public sealed class CertificateInspectorTests : IDisposable
     }
 
     [Fact]
+    public void Validate_ExpiredIntermediate_IsRefusedEvenThoughTheLeafIsValid()
+    {
+        using var ca = new TestCertificateAuthority(intermediateExpires: DateTimeOffset.UtcNow.AddDays(-1));
+        var (certificate, key) = ca.IssueWithNewKey("shop.example.com");
+        using (certificate)
+        using (key)
+        {
+            var problem = Assert.Single(CertificateInspector.Validate(
+                certificate, ["shop.example.com"], [ca.Intermediate], DateTimeOffset.UtcNow, [ca.Root]));
+
+            Assert.Contains("'SSLense Test Intermediate' in the chain expired", problem, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Validate_UntrustedRoot_IsRefused()
     {
         var (certificate, key) = _ca.IssueWithNewKey("shop.example.com");

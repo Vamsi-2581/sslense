@@ -9,7 +9,8 @@ internal sealed class TestCertificateAuthority : IDisposable
     private readonly RSA _rootKey = RSA.Create(2048);
     private readonly RSA _intermediateKey = RSA.Create(2048);
 
-    public TestCertificateAuthority()
+    /// <param name="intermediateExpires">When the intermediate expires; default two years ahead.</param>
+    public TestCertificateAuthority(DateTimeOffset? intermediateExpires = null)
     {
         var rootRequest = new CertificateRequest("CN=SSLense Test Root", _rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
@@ -19,7 +20,7 @@ internal sealed class TestCertificateAuthority : IDisposable
         var intermediateRequest = new CertificateRequest("CN=SSLense Test Intermediate", _intermediateKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         intermediateRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
         intermediateRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
-        using var intermediate = intermediateRequest.Create(Root, DateTimeOffset.UtcNow.AddDays(-300), DateTimeOffset.UtcNow.AddYears(2), [1, 2, 3, 4]);
+        using var intermediate = intermediateRequest.Create(Root, DateTimeOffset.UtcNow.AddDays(-300), intermediateExpires ?? DateTimeOffset.UtcNow.AddYears(2), [1, 2, 3, 4]);
         Intermediate = intermediate.CopyWithPrivateKey(_intermediateKey);
     }
 

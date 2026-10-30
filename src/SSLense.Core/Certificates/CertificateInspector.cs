@@ -76,7 +76,7 @@ internal static class CertificateInspector
             problems.Add("The certificate is not issued for server authentication (TLS web server), so browsers would reject it.");
         }
 
-        if (GetChainProblem(certificate, intermediates, customRoots) is { } chainProblem)
+        if (GetChainProblem(certificate, intermediates, customRoots, now) is { } chainProblem)
         {
             problems.Add(chainProblem);
         }
@@ -85,14 +85,20 @@ internal static class CertificateInspector
     }
 
     /// <summary>Null when the certificate chains to a trusted root; otherwise what is missing.</summary>
+    /// <remarks>
+    /// Time errors are ignored while building so an expired leaf gets the clearer message from <see cref="Validate"/>;
+    /// the issuing certificates' dates are then checked here, because browsers reject an expired intermediate too.
+    /// </remarks>
     public static string? GetChainProblem(
         X509Certificate2 certificate,
         IReadOnlyList<X509Certificate2> intermediates,
-        IReadOnlyList<X509Certificate2>? customRoots = null)
+        IReadOnlyList<X509Certificate2>? customRoots = null,
+        DateTimeOffset? now = null)
     {
         using var chain = new X509Chain();
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreNotTimeValid;
+        var at = (now ?? DateTimeOffset.UtcNow).UtcDateTime;
         chain.ChainPolicy.ExtraStore.AddRange(intermediates.ToArray());
         if (customRoots is not null)
         {
@@ -102,7 +108,16 @@ internal static class CertificateInspector
 
         if (chain.Build(certificate))
         {
-            return null;
+            var issuer = chain.ChainElements.Skip(1).Select(element => element.Certificate).FirstOrDefault(value =>
+                value.NotBefore.ToUniversalTime() > at || value.NotAfter.ToUniversalTime() <= at);
+            return issuer is null
+                ? null
+                : issuer.NotAfter.ToUniversalTime() <= at
+                    ? $"The issuing certificate '{issuer.GetNameInfo(X509NameType.SimpleName, forIssuer: false)}' in the chain " +
+                      $"expired on {issuer.NotAfter.ToUniversalTime():yyyy-MM-dd}, so browsers would reject this certificate. " +
+                      "Download the current intermediate bundle from your certificate provider."
+                    : $"The issuing certificate '{issuer.GetNameInfo(X509NameType.SimpleName, forIssuer: false)}' in the chain " +
+                      $"is not valid until {issuer.NotBefore.ToUniversalTime():yyyy-MM-dd HH:mm} UTC.";
         }
 
         var statuses = chain.ChainStatus.Select(status => status.Status).ToHashSet();
