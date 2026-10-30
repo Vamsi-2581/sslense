@@ -31,7 +31,8 @@ internal sealed class HealthCheckService(
     ICertificateStore certificateStore,
     IPreflightService preflightService,
     IHostResolver hostResolver,
-    HttpClient httpClient) : IHealthCheckService
+    HttpClient httpClient,
+    ICertificateAuthorityRegistry authorities) : IHealthCheckService
 {
     // The service checks hourly; three missed cycles means it is stuck or not running its loop.
     private static readonly TimeSpan HeartbeatStaleAfter = TimeSpan.FromHours(3);
@@ -139,17 +140,20 @@ internal sealed class HealthCheckService(
                 }
             }
 
-            var environments = certificates.Select(value => value.Environment).Distinct().ToList();
-            if (environments.Count == 0)
-            {
-                environments.Add(AcmeEnvironment.Staging);
-            }
-
-            foreach (var environment in environments)
+            // Every CA that renews a managed certificate; Let's Encrypt staging when nothing is managed yet.
+            var authorityIds = certificates
+                .Where(value => value.Source == CertificateSource.Acme)
+                .Select(value => value.AuthorityId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .DefaultIfEmpty(CertificateAuthorities.LetsEncryptStagingId);
+            foreach (var authorityId in authorityIds)
             {
                 await Check(
-                        $"Let's Encrypt {environment.DisplayName()}",
-                        () => CheckAcmeAsync(environment, cancellationToken))
+                        authorityId,
+                        async () => await CheckAcmeAsync(
+                                await authorities.GetAsync(authorityId, cancellationToken).ConfigureAwait(false),
+                                cancellationToken)
+                            .ConfigureAwait(false))
                     .ConfigureAwait(false);
             }
         }
@@ -306,7 +310,7 @@ internal sealed class HealthCheckService(
     {
         var name = $"Expiry: {certificate.SiteName}";
         var days = (int)Math.Floor((certificate.NotAfter - DateTimeOffset.UtcNow).TotalDays);
-        var environment = certificate.Environment.DisplayName();
+        var environment = CertificateAuthorities.Label(certificate.AuthorityId);
         var expires = $"{environment} certificate expires {certificate.NotAfter:yyyy-MM-dd HH:mm} UTC";
         return ExpiryMonitor.GetLevel(certificate, DateTimeOffset.UtcNow) switch
         {
@@ -364,22 +368,25 @@ internal sealed class HealthCheckService(
         }
     }
 
-    private async Task<HealthCheckResult> CheckAcmeAsync(AcmeEnvironment environment, CancellationToken cancellationToken)
+    private async Task<HealthCheckResult> CheckAcmeAsync(CertificateAuthority authority, CancellationToken cancellationToken)
     {
         // A directory GET creates nothing and needs no account; it only proves outbound HTTPS works.
-        var name = $"Let's Encrypt {environment.DisplayName()}";
+        var name = authority.Name;
+        var isLetsEncrypt = authority.Id is CertificateAuthorities.LetsEncryptId or CertificateAuthorities.LetsEncryptStagingId;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(NetworkTimeout);
         try
         {
-            using var response = await httpClient.GetAsync(environment.DirectoryUri(), timeout.Token).ConfigureAwait(false);
+            using var response = await httpClient.GetAsync(authority.DirectoryUri, timeout.Token).ConfigureAwait(false);
             return response.IsSuccessStatusCode
                 ? Pass(name, $"The ACME directory responded with HTTP {(int)response.StatusCode}.")
                 : new HealthCheckResult(
                     name,
                     HealthStatus.Fail,
                     $"The ACME directory responded with HTTP {(int)response.StatusCode}.",
-                    "Check https://letsencrypt.status.io for outages, and any outbound proxy.");
+                    isLetsEncrypt
+                        ? "Check https://letsencrypt.status.io for outages, and any outbound proxy."
+                        : "Check the certificate authority's status page for outages, and any outbound proxy.");
         }
         catch (Exception exception) when (exception is HttpRequestException ||
                                           exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
@@ -387,8 +394,8 @@ internal sealed class HealthCheckService(
             return new HealthCheckResult(
                 name,
                 HealthStatus.Fail,
-                $"Could not reach {environment.DirectoryUri()}: {exception.Message}",
-                "Allow outbound HTTPS (port 443) to Let's Encrypt, and check DNS, proxy, and TLS-inspection settings.");
+                $"Could not reach {authority.DirectoryUri}: {exception.Message}",
+                $"Allow outbound HTTPS (port 443) to {authority.DirectoryUri.Host}, and check DNS, proxy, and TLS-inspection settings.");
         }
     }
 

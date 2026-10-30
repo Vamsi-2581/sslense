@@ -12,7 +12,7 @@ public sealed class CertificateRowViewModel
         Expiry = status.NotAfter;
         DaysRemaining = status.DaysRemaining;
         Thumbprint = status.Thumbprint;
-        Environment = status.Environment == AcmeEnvironment.Production ? "Production" : "Staging";
+        Environment = status.IsTestAuthority ? "Staging" : "Production";
 
         if (status.LastRenewalSucceeded == false)
         {

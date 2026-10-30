@@ -31,6 +31,7 @@ public sealed class AcmeServiceTests
         protocol.Setup(value => value.CreateOrderAsync(
                 "admin@example.com",
                 It.Is<IReadOnlyList<string>>(hosts => hosts.SequenceEqual(new[] { "example.com" })),
+                It.Is<CertificateAuthority>(authority => authority.Id == CertificateAuthorities.LetsEncryptStagingId),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(order.Object);
         var cleanup = new TrackingCleanup();
@@ -134,6 +135,7 @@ public sealed class AcmeServiceTests
         protocol.Setup(value => value.CreateOrderAsync(
                 It.IsAny<string>(),
                 It.IsAny<IReadOnlyList<string>>(),
+                It.IsAny<CertificateAuthority>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(order.Object);
         var cleanup = new TrackingCleanup();
@@ -198,12 +200,12 @@ public sealed class AcmeServiceTests
     }
 
     [Theory]
-    [InlineData("CN=(STAGING) Pseudo Plum E5, O=(STAGING) Let's Encrypt, C=US", AcmeEnvironment.Production, true)]
-    [InlineData("CN=E5, O=Let's Encrypt, C=US", AcmeEnvironment.Staging, true)]
-    [InlineData("CN=E5, O=Let's Encrypt, C=US", AcmeEnvironment.Production, false)]
+    [InlineData("CN=(STAGING) Pseudo Plum E5, O=(STAGING) Let's Encrypt, C=US", CertificateAuthorities.LetsEncryptId, true)]
+    [InlineData("CN=E5, O=Let's Encrypt, C=US", CertificateAuthorities.LetsEncryptStagingId, true)]
+    [InlineData("CN=E5, O=Let's Encrypt, C=US", CertificateAuthorities.LetsEncryptId, false)]
     public async Task IssueAsync_ProductionRequest_DoesNotTreatStagingCertificateAsCoverage(
         string issuer,
-        AcmeEnvironment managedEnvironment,
+        string managedAuthorityId,
         bool expectOrder)
     {
         var certificateStore = new Mock<ICertificateStore>(MockBehavior.Strict);
@@ -219,7 +221,7 @@ public sealed class AcmeServiceTests
             .ReturnsAsync([new ManagedCertificate(
                 "My Site", ["example.com"], "admin@example.com", "AABBCC",
                 DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(60),
-                Environment: managedEnvironment)]);
+                AuthorityId: managedAuthorityId)]);
         var site = new IisSite(
             1,
             "My Site",
@@ -233,7 +235,7 @@ public sealed class AcmeServiceTests
         protocol.Setup(value => value.CreateOrderAsync(
                 "admin@example.com",
                 It.IsAny<IReadOnlyList<string>>(),
-                AcmeEnvironment.Production,
+                It.Is<CertificateAuthority>(authority => authority.Id == CertificateAuthorities.LetsEncryptId),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("order requested"));
         var service = new AcmeService(
@@ -248,7 +250,7 @@ public sealed class AcmeServiceTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.IssueAsync(
             new AcmeIssueRequest(
                 "My Site", ["example.com"], "admin@example.com",
-                Environment: AcmeEnvironment.Production)));
+                AuthorityId: CertificateAuthorities.LetsEncryptId)));
 
         if (expectOrder)
         {
@@ -273,7 +275,7 @@ public sealed class AcmeServiceTests
         Assert.Equal(expected, CertesAcmeProtocolClient.IsRateLimited(exception));
         if (expected)
         {
-            var mapped = CertesAcmeProtocolClient.ToRateLimitedException(exception, AcmeEnvironment.Staging);
+            var mapped = CertesAcmeProtocolClient.ToRateLimitedException(exception, CertificateAuthorities.LetsEncryptStaging);
             Assert.Contains("too many certificates", mapped.Message, StringComparison.Ordinal);
             Assert.Contains("will not retry", mapped.Message, StringComparison.Ordinal);
         }
@@ -349,6 +351,7 @@ public sealed class AcmeServiceTests
         protocol.Setup(value => value.CreateOrderAsync(
                 It.IsAny<string>(),
                 It.IsAny<IReadOnlyList<string>>(),
+                It.IsAny<CertificateAuthority>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(order.Object);
         var handler = new Mock<IChallengeHandler>(MockBehavior.Strict);

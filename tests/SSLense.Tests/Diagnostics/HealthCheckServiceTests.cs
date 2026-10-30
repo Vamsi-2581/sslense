@@ -173,7 +173,8 @@ public sealed class HealthCheckServiceTests
         return new HealthCheckService(
             configStore.Object, managed.Object, journal.Object, serviceManager.Object, heartbeatStore.Object,
             iis.Object, store.Object, preflight.Object, resolver.Object,
-            new HttpClient(new StubHandler(acmeStatus)));
+            new HttpClient(new StubHandler(acmeStatus)),
+            CertificateAuthorityRegistry.BuiltInOnly);
     }
 
     /// <summary>Answers every request locally, so the test never contacts Let's Encrypt.</summary>
@@ -181,7 +182,7 @@ public sealed class HealthCheckServiceTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Assert.Equal(AcmeEnvironment.Staging.DirectoryUri(), request.RequestUri);
+            Assert.Equal(CertificateAuthorities.LetsEncryptStaging.DirectoryUri, request.RequestUri);
             return Task.FromResult(new HttpResponseMessage(status));
         }
     }

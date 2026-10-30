@@ -1,3 +1,6 @@
+using SSLense.Core.Acme;
+using SSLense.Core.Config;
+
 namespace SSLense.Core.Certificates;
 
 public sealed record CertificateDetails(
@@ -9,4 +12,7 @@ public sealed record CertificateDetails(
     DateTimeOffset NotAfter,
     IReadOnlyList<string> BoundSites,
     IReadOnlyList<string> RecentLogLines,
-    Acme.AcmeEnvironment Environment = Acme.AcmeEnvironment.Staging);
+    string AuthorityId = CertificateAuthorities.LetsEncryptStagingId,
+    string AuthorityName = "Let's Encrypt staging",
+    bool IsTestAuthority = true,
+    CertificateSource Source = CertificateSource.Acme);

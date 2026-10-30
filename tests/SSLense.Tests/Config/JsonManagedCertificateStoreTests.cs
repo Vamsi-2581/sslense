@@ -75,7 +75,7 @@ public sealed class JsonManagedCertificateStoreTests
             "My Site", DateTimeOffset.UtcNow, "failed", DateTimeOffset.UtcNow.AddHours(1));
 
         Assert.Equal(LegacyJson, fileSystem.Files[$"{StatePath}.v0.bak"]);
-        Assert.Contains("\"schemaVersion\": 1", fileSystem.Files[StatePath], StringComparison.Ordinal);
+        Assert.Contains($"\"schemaVersion\": {StateSchema.ManagedCertificates}", fileSystem.Files[StatePath], StringComparison.Ordinal);
         Assert.Equal(migratedId, Assert.Single(await store.GetAllAsync()).Id);
     }
 

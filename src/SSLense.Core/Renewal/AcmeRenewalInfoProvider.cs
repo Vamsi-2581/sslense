@@ -9,7 +9,7 @@ using SSLense.Core.Config;
 
 namespace SSLense.Core.Renewal;
 
-internal sealed class AcmeRenewalInfoProvider(HttpClient httpClient) : IRenewalInfoProvider
+internal sealed class AcmeRenewalInfoProvider(HttpClient httpClient, ICertificateAuthorityRegistry authorities) : IRenewalInfoProvider
 {
     // RFC 9773 asks clients to honor Retry-After; without one, re-check a few times a day.
     private static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromHours(6);
@@ -41,9 +41,20 @@ internal sealed class AcmeRenewalInfoProvider(HttpClient httpClient) : IRenewalI
                 return null;
             }
 
+            // Ask the CA that issued the certificate. Imported certificates have no ACME CA to ask, and a
+            // profile removed since issuance cannot be asked either; both fall back to lifetime-relative timing.
+            var authority = certificate.Source == CertificateSource.Acme
+                ? (await authorities.GetAllAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(value =>
+                    string.Equals(value.Id, certificate.AuthorityId, StringComparison.OrdinalIgnoreCase))
+                : null;
+            if (authority is null)
+            {
+                return null;
+            }
+
             var certificateId = CreateCertificateId(installed);
             using var directoryResponse = await httpClient
-                .GetAsync(certificate.Environment.DirectoryUri(), cancellationToken)
+                .GetAsync(authority.DirectoryUri, cancellationToken)
                 .ConfigureAwait(false);
             if (!directoryResponse.IsSuccessStatusCode)
             {

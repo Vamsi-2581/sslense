@@ -15,23 +15,17 @@ internal sealed class CertesAcmeProtocolClient : IAcmeProtocolClient
     public async Task<IAcmeOrderSession> CreateOrderAsync(
         string email,
         IReadOnlyList<string> hosts,
-        CancellationToken cancellationToken) =>
-        await CreateOrderAsync(email, hosts, AcmeEnvironment.Staging, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<IAcmeOrderSession> CreateOrderAsync(
-        string email,
-        IReadOnlyList<string> hosts,
-        AcmeEnvironment environment,
+        CertificateAuthority authority,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(authority);
         try
         {
-            return await CreateOrderCoreAsync(email, hosts, environment, cancellationToken).ConfigureAwait(false);
+            return await CreateOrderCoreAsync(email, hosts, authority, cancellationToken).ConfigureAwait(false);
         }
         catch (AcmeRequestException exception) when (IsRateLimited(exception))
         {
-            throw ToRateLimitedException(exception, environment);
+            throw ToRateLimitedException(exception, authority);
         }
     }
 
@@ -40,35 +34,36 @@ internal sealed class CertesAcmeProtocolClient : IAcmeProtocolClient
 
     internal static AcmeRateLimitedException ToRateLimitedException(
         AcmeRequestException exception,
-        AcmeEnvironment environment) =>
+        CertificateAuthority authority) =>
         new(
-            $"The Let's Encrypt {environment.DisplayName()} service rate limit was reached: " +
+            $"The {authority.Name} rate limit was reached: " +
             $"{exception.Error?.Detail ?? exception.Message} " +
             "SSLense will not retry until the next scheduled check. " +
-            "See https://letsencrypt.org/docs/rate-limits/ for limits and reset times.",
+            (authority.Id is CertificateAuthorities.LetsEncryptId or CertificateAuthorities.LetsEncryptStagingId
+                ? "See https://letsencrypt.org/docs/rate-limits/ for limits and reset times."
+                : "See the certificate authority's documentation for its limits."),
             exception);
 
     private async Task<IAcmeOrderSession> CreateOrderCoreAsync(
         string email,
         IReadOnlyList<string> hosts,
-        AcmeEnvironment environment,
+        CertificateAuthority authority,
         CancellationToken cancellationToken)
     {
-        var directory = environment.DirectoryUri();
-        var savedKey = await _accountStore.LoadKeyAsync(environment, cancellationToken).ConfigureAwait(false);
+        var savedKey = await _accountStore.LoadKeyAsync(authority.Id, cancellationToken).ConfigureAwait(false);
         AcmeContext context;
         if (savedKey is null)
         {
-            context = new AcmeContext(directory);
+            context = new AcmeContext(authority.DirectoryUri);
             await context.NewAccount(email, true)
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await _accountStore.SaveKeyAsync(environment, context.AccountKey.ToPem(), cancellationToken)
+            await _accountStore.SaveKeyAsync(authority.Id, context.AccountKey.ToPem(), cancellationToken)
                 .ConfigureAwait(false);
         }
         else
         {
-            context = new AcmeContext(directory, KeyFactory.FromPem(savedKey));
+            context = new AcmeContext(authority.DirectoryUri, KeyFactory.FromPem(savedKey));
             await context.Account().WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -92,7 +87,7 @@ internal sealed class CertesAcmeProtocolClient : IAcmeProtocolClient
                 challenge));
         }
 
-        return new CertesOrderSession(order, challenges, environment);
+        return new CertesOrderSession(order, challenges, authority);
     }
 
     private sealed record CertesChallenge(
@@ -104,16 +99,16 @@ internal sealed class CertesAcmeProtocolClient : IAcmeProtocolClient
     {
         private readonly IOrderContext _order;
         private readonly IReadOnlyList<CertesChallenge> _challenges;
-        private readonly AcmeEnvironment _environment;
+        private readonly CertificateAuthority _authority;
 
         public CertesOrderSession(
             IOrderContext order,
             IReadOnlyList<CertesChallenge> challenges,
-            AcmeEnvironment environment)
+            CertificateAuthority authority)
         {
             _order = order;
             _challenges = challenges;
-            _environment = environment;
+            _authority = authority;
             Challenges = challenges.Select(item => item.Model).ToArray();
         }
 
@@ -127,7 +122,7 @@ internal sealed class CertesAcmeProtocolClient : IAcmeProtocolClient
             }
             catch (AcmeRequestException exception) when (IsRateLimited(exception))
             {
-                throw ToRateLimitedException(exception, _environment);
+                throw ToRateLimitedException(exception, _authority);
             }
         }
 
@@ -181,7 +176,7 @@ internal sealed class CertesAcmeProtocolClient : IAcmeProtocolClient
             }
             catch (AcmeRequestException exception) when (IsRateLimited(exception))
             {
-                throw ToRateLimitedException(exception, _environment);
+                throw ToRateLimitedException(exception, _authority);
             }
         }
 

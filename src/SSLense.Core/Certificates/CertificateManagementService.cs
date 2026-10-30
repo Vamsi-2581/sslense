@@ -1,3 +1,4 @@
+using SSLense.Core.Acme;
 using SSLense.Core.Config;
 using SSLense.Core.Iis;
 using SSLense.Core.Logs;
@@ -8,8 +9,11 @@ internal sealed class CertificateManagementService(
     IManagedCertificateStore managedStore,
     ICertificateStore certificateStore,
     IIisService iisService,
-    ILogService logService) : ICertificateManagementService
+    ILogService logService,
+    ICertificateAuthorityRegistry? authorities = null) : ICertificateManagementService
 {
+    private readonly ICertificateAuthorityRegistry _authorities = authorities ?? CertificateAuthorityRegistry.BuiltInOnly;
+
     public async Task<CertificateDetails> GetDetailsAsync(
         string siteName,
         CancellationToken cancellationToken = default)
@@ -23,6 +27,7 @@ internal sealed class CertificateManagementService(
             .Select(site => site.Name)
             .ToArray();
         var logs = await logService.ReadCurrentAsync("All", 10, cancellationToken).ConfigureAwait(false);
+        var authority = await _authorities.DescribeAsync(record, cancellationToken).ConfigureAwait(false);
         return new CertificateDetails(
             record.SiteName,
             record.Hosts,
@@ -32,7 +37,10 @@ internal sealed class CertificateManagementService(
             installed?.NotAfter ?? record.NotAfter,
             boundSites,
             logs.Lines,
-            record.Environment);
+            record.AuthorityId,
+            authority.Name,
+            authority.IsTest,
+            record.Source);
     }
 
     public async Task RemoveAsync(string siteName, CancellationToken cancellationToken = default)

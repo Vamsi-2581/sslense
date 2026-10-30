@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace SSLense.Core.Config;
 
@@ -171,20 +172,28 @@ public sealed class JsonManagedCertificateStore : IManagedCertificateStore
         List<ManagedCertificate>? records;
         try
         {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            // Read as a tree first, so older records can be upgraded before they are bound to the current type.
+            var root = JsonNode.Parse(json)
+                ?? throw new InvalidDataException($"Managed certificate state '{_statePath}' is empty.");
+            JsonArray? array;
+            if (root is JsonArray bareArray)
             {
                 version = 0;
-                records = document.RootElement.Deserialize<List<ManagedCertificate>>(SerializerOptions);
+                array = bareArray;
             }
             else
             {
-                var state = document.RootElement.Deserialize<StateDocument>(SerializerOptions)
-                    ?? throw new InvalidDataException($"Managed certificate state '{_statePath}' is empty.");
-                version = state.SchemaVersion;
+                version = root["schemaVersion"]?.GetValue<int>() ?? 0;
                 StateSchema.EnsureSupported(version, StateSchema.ManagedCertificates, _statePath);
-                records = state.Certificates;
+                array = root["certificates"] as JsonArray;
             }
+
+            if (array is not null && version < 2)
+            {
+                ManagedCertificateMigrations.UpgradeRecords(array);
+            }
+
+            records = array?.Deserialize<List<ManagedCertificate>>(SerializerOptions);
         }
         catch (JsonException exception)
         {

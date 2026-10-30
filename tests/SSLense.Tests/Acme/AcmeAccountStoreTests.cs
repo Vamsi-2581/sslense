@@ -31,8 +31,8 @@ public sealed class AcmeAccountStoreTests
             .Returns(Encoding.UTF8.GetBytes(accountKey));
         var store = new AcmeAccountStore(fileSystem.Object, protector.Object);
 
-        await store.SaveKeyAsync(accountKey, CancellationToken.None);
-        var loaded = await store.LoadKeyAsync(CancellationToken.None);
+        await store.SaveKeyAsync(CertificateAuthorities.LetsEncryptStagingId, accountKey, CancellationToken.None);
+        var loaded = await store.LoadKeyAsync(CertificateAuthorities.LetsEncryptStagingId, CancellationToken.None);
 
         Assert.Equal(accountKey, loaded);
         Assert.Equal(Convert.ToBase64String(new byte[] { 10, 20, 30 }), savedValue);
@@ -44,8 +44,8 @@ public sealed class AcmeAccountStoreTests
     {
         const string productionKey = "production-private-key";
         string? savedValue = null;
-        var productionPath = AppPaths.GetAccountKeyFile(AcmeEnvironment.Production);
-        var stagingPath = AppPaths.GetAccountKeyFile(AcmeEnvironment.Staging);
+        var productionPath = AppPaths.GetAccountKeyFile(CertificateAuthorities.LetsEncryptId);
+        var stagingPath = AppPaths.GetAccountKeyFile(CertificateAuthorities.LetsEncryptStagingId);
         var fileSystem = new Mock<IFileSystem>(MockBehavior.Strict);
         fileSystem.Setup(value => value.WriteAllTextAtomicAsync(
                 productionPath, It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -61,15 +61,34 @@ public sealed class AcmeAccountStoreTests
             .Returns(Encoding.UTF8.GetBytes(productionKey));
         var store = new AcmeAccountStore(fileSystem.Object, protector.Object);
 
-        await store.SaveKeyAsync(AcmeEnvironment.Production, productionKey, CancellationToken.None);
+        await store.SaveKeyAsync(CertificateAuthorities.LetsEncryptId, productionKey, CancellationToken.None);
         var loadedProduction = await store.LoadKeyAsync(
-            AcmeEnvironment.Production, CancellationToken.None);
+            CertificateAuthorities.LetsEncryptId, CancellationToken.None);
         var loadedStaging = await store.LoadKeyAsync(
-            AcmeEnvironment.Staging, CancellationToken.None);
+            CertificateAuthorities.LetsEncryptStagingId, CancellationToken.None);
 
         Assert.Equal(productionKey, loadedProduction);
         Assert.Null(loadedStaging);
         Assert.NotEqual(productionPath, stagingPath);
         fileSystem.VerifyAll();
+    }
+
+    [Theory]
+    // Existing installations keep their Let's Encrypt accounts, so these names must never change.
+    [InlineData(CertificateAuthorities.LetsEncryptStagingId, "account-key.staging.dat")]
+    [InlineData(CertificateAuthorities.LetsEncryptId, "account-key.production.dat")]
+    [InlineData("zerossl", "account-key.zerossl.dat")]
+    public void GetAccountKeyFile_KeepsExistingNamesAndSeparatesEachAuthority(string authorityId, string expectedFile)
+    {
+        Assert.Equal(expectedFile, Path.GetFileName(AppPaths.GetAccountKeyFile(authorityId)));
+    }
+
+    [Theory]
+    [InlineData(@"..\evil")]
+    [InlineData("Upper")]
+    [InlineData("")]
+    public void GetAccountKeyFile_RejectsIdsThatCouldEscapeTheDataFolder(string authorityId)
+    {
+        Assert.Throws<ArgumentException>(() => AppPaths.GetAccountKeyFile(authorityId));
     }
 }

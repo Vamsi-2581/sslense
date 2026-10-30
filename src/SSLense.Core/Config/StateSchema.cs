@@ -6,16 +6,22 @@ namespace SSLense.Core.Config;
 /// </summary>
 internal static class StateSchema
 {
-    /// <summary>Version 0 was a bare JSON array; version 1 wraps it with a version and adds record IDs.</summary>
-    public const int ManagedCertificates = 1;
+    /// <summary>
+    /// Version 0 was a bare JSON array; version 1 wraps it with a version and adds record IDs. Version 2 replaces
+    /// the Let's Encrypt environment with a certificate authority ID and adds the certificate source
+    /// (see <see cref="ManagedCertificateMigrations"/>).
+    /// </summary>
+    public const int ManagedCertificates = 2;
 
     /// <summary>
     /// Version 0 had no version field. Version 2 replaced the single SMTP server and generic webhook with
-    /// email, chat channels, a heartbeat, and the Event Log (see <see cref="ConfigMigrations"/>).
+    /// email, chat channels, a heartbeat, and the Event Log (see <see cref="ConfigMigrations"/>). Version 3 adds
+    /// configured certificate authorities.
     /// </summary>
-    public const int Config = 2;
+    public const int Config = 3;
 
-    public const int Transactions = 1;
+    /// <summary>Version 2 stores the certificate snapshot in managed-certificate schema 2.</summary>
+    public const int Transactions = 2;
 
     public const int ServiceHeartbeat = 1;
 

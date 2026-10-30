@@ -162,6 +162,14 @@ internal sealed class DiagnosticBundleService(
     internal static AppConfig RedactConfig(AppConfig config) => config with
     {
         DefaultEmail = SecretRedactor.MaskEmail(config.DefaultEmail),
+
+        // The directory URL and key ID help diagnosis; the HMAC key is a credential.
+        CertificateAuthorities = config.CertificateAuthorities
+            .Select(authority => authority with
+            {
+                ProtectedEabHmacKey = authority.ProtectedEabHmacKey is null ? null : SecretRedactor.Marker
+            })
+            .ToArray(),
         Notifications = config.Notifications with
         {
             Email = config.Notifications.Email is { } email

@@ -34,6 +34,7 @@ internal sealed class RenewalService : IRenewalService
     private readonly ICertificateStore _certificateStore;
     private readonly INotifier _notifier;
     private readonly IRenewalInfoProvider _renewalInfoProvider;
+    private readonly ICertificateAuthorityRegistry _authorities;
 
     public RenewalService(
         IManagedCertificateStore managedStore,
@@ -42,7 +43,8 @@ internal sealed class RenewalService : IRenewalService
         IIisService iisService,
         ICertificateStore certificateStore,
         INotifier notifier,
-        IRenewalInfoProvider? renewalInfoProvider = null)
+        IRenewalInfoProvider? renewalInfoProvider = null,
+        ICertificateAuthorityRegistry? authorities = null)
     {
         _managedStore = managedStore;
         _configStore = configStore;
@@ -51,6 +53,7 @@ internal sealed class RenewalService : IRenewalService
         _certificateStore = certificateStore;
         _notifier = notifier;
         _renewalInfoProvider = renewalInfoProvider ?? new NoOpRenewalInfoProvider();
+        _authorities = authorities ?? CertificateAuthorityRegistry.BuiltInOnly;
     }
 
     public async Task<IReadOnlyList<ManagedCertificateStatus>> GetStatusAsync(
@@ -58,9 +61,11 @@ internal sealed class RenewalService : IRenewalService
     {
         var now = DateTimeOffset.UtcNow;
         var records = await _managedStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        return records
-            .OrderBy(value => value.NotAfter)
-            .Select(value => new ManagedCertificateStatus(
+        var statuses = new List<ManagedCertificateStatus>();
+        foreach (var value in records.OrderBy(value => value.NotAfter))
+        {
+            var authority = await _authorities.DescribeAsync(value, cancellationToken).ConfigureAwait(false);
+            statuses.Add(new ManagedCertificateStatus(
                 value.SiteName,
                 value.Hosts,
                 value.NotBefore,
@@ -70,10 +75,16 @@ internal sealed class RenewalService : IRenewalService
                 value.LastRenewalAttempt,
                 value.LastRenewalSucceeded,
                 value.LastRenewalMessage,
-                value.Environment,
+                value.AuthorityId,
                 value.ConsecutiveFailures,
-                value.NextRetryAt))
-            .ToArray();
+                value.NextRetryAt,
+                authority.Name,
+                authority.IsTest,
+                value.Source,
+                value.Issuer));
+        }
+
+        return statuses;
     }
 
     public async Task<IReadOnlyList<RenewalResult>> RenewAsync(
@@ -162,7 +173,7 @@ internal sealed class RenewalService : IRenewalService
                         certificate.Email,
                         certificate.OutputDirectory,
                         true,
-                        certificate.Environment,
+                        certificate.AuthorityId,
                         certificate.Thumbprint),
                     progress,
                     cancellationToken)
@@ -179,7 +190,7 @@ internal sealed class RenewalService : IRenewalService
                     new NotificationMessage(
                         NotificationKind.RenewalSuccess,
                         $"SSLense renewal succeeded: {certificate.SiteName}",
-                        $"The {certificate.Environment.DisplayName()} certificate for {certificate.SiteName} " +
+                        $"The {CertificateAuthorities.Label(certificate.AuthorityId)} certificate for {certificate.SiteName} " +
                         $"({string.Join(", ", certificate.Hosts)}) " +
                         $"was renewed successfully. New thumbprint: {newThumbprint}."),
                     progress,
@@ -239,7 +250,7 @@ internal sealed class RenewalService : IRenewalService
                     new NotificationMessage(
                         NotificationKind.RenewalFailure,
                         $"SSLense renewal failed: {certificate.SiteName}",
-                        $"The {certificate.Environment.DisplayName()} certificate renewal for {certificate.SiteName} " +
+                        $"The {CertificateAuthorities.Label(certificate.AuthorityId)} certificate renewal for {certificate.SiteName} " +
                         $"({string.Join(", ", certificate.Hosts)}) has failed {failures} consecutive time(s). " +
                         $"The existing IIS binding was retained. The certificate expires at {certificate.NotAfter:O}. " +
                         $"Error: {message}"),

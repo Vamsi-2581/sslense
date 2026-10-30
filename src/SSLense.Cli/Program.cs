@@ -864,7 +864,11 @@ static async Task<int> StatusAsync(
         foreach (var status in statuses)
         {
             Console.WriteLine(status.SiteName);
-            Console.WriteLine($"  Environment: {status.Environment.DisplayName()}");
+            Console.WriteLine($"  Certificate authority: {status.AuthorityName}");
+            if (!string.IsNullOrWhiteSpace(status.Issuer))
+            {
+                Console.WriteLine($"  Issuer: {status.Issuer}");
+            }
             Console.WriteLine($"  Hosts: {string.Join(", ", status.Hosts)}");
             Console.WriteLine($"  Issued: {status.NotBefore:yyyy-MM-dd HH:mm:ss} UTC");
             Console.WriteLine($"  Expires: {status.NotAfter:yyyy-MM-dd HH:mm:ss} UTC ({status.DaysRemaining} days left)");
@@ -965,17 +969,17 @@ static async Task<int> IssueAsync(
                 "Run against staging first and confirm the IIS site and host names are correct.");
         }
 
-        var environment = production ? AcmeEnvironment.Production : AcmeEnvironment.Staging;
+        var authorityId = production ? CertificateAuthorities.LetsEncryptId : CertificateAuthorities.LetsEncryptStagingId;
         var hosts = string.IsNullOrWhiteSpace(hostsValue)
             ? Array.Empty<string>()
             : hostsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var result = await acmeService.IssueAsync(
-                new AcmeIssueRequest(siteName, hosts, email, outputDirectory, force, environment),
+                new AcmeIssueRequest(siteName, hosts, email, outputDirectory, force, authorityId),
                 new ConsoleProgress(),
                 cancellationToken)
             .ConfigureAwait(false);
 
-        Console.WriteLine($"{environment.DisplayName()} certificate issued, installed, and bound successfully.");
+        Console.WriteLine($"{CertificateAuthorities.Label(authorityId)} certificate issued, installed, and bound successfully.");
         Console.WriteLine($"Thumbprint: {result.CertificateThumbprint}");
         Console.WriteLine($"Valid from: {result.NotBefore:yyyy-MM-dd HH:mm:ss} UTC");
         Console.WriteLine($"Valid until: {result.NotAfter:yyyy-MM-dd HH:mm:ss} UTC");

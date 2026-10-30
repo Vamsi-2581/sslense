@@ -1,6 +1,6 @@
 # Design: certificate sources (other CAs and bring-your-own certificates)
 
-Status: **proposed**, for review before implementation. Branch: `feature/certificate-sources`.
+Status: **approved** October 30, 2026, with every decision in section 8 accepted as proposed. Branch: `feature/certificate-sources`.
 
 ## 1. Goals
 
@@ -113,7 +113,7 @@ In code, `AcmeEnvironment` (an enum with two hard-coded Let's Encrypt URLs, used
 
 | Step | Contents | Ships |
 |---|---|---|
-| 1 | Data model, `CertificateAuthority` profiles replacing `AcmeEnvironment`, migrations; no visible change | Internal |
+| 1 | Data model, `CertificateAuthority` profiles replacing `AcmeEnvironment`, migrations; no visible change. **Done.** | Internal |
 | 2 | Bring your own certificate: import, adopt, CSR and complete, replace; reminders; health checks; CLI | CLI |
 | 3 | GUI for step 2 | GUI |
 | 4 | Any ACME CA: profiles, presets, EAB, guards, `--ca`; health and diagnostics; CLI and GUI | Both |

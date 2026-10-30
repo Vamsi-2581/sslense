@@ -73,7 +73,7 @@ internal sealed class ExpiryMonitor(
     private static NotificationMessage CreateMessage(ManagedCertificate certificate, ExpiryWarningLevel level)
     {
         var hosts = string.Join(", ", certificate.Hosts);
-        var environment = certificate.Environment.DisplayName();
+        var environment = CertificateAuthorities.Label(certificate.AuthorityId);
         var renewalState = certificate.ConsecutiveFailures > 0
             ? $" The last {certificate.ConsecutiveFailures} renewal attempt(s) failed: {certificate.LastRenewalMessage}"
             : string.Empty;

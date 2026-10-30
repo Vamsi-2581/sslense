@@ -277,6 +277,7 @@ SSLense stores files under `C:\ProgramData\SSLense`:
 - `managed-certificates.json`: sites, hosts, certificate dates, thumbprints, and renewal results
 - `account-key.staging.dat`: DPAPI-protected staging ACME account key
 - `account-key.production.dat`: separate DPAPI-protected production ACME account key, created only when production is used
+- `account-key.<authority-id>.dat`: one DPAPI-protected ACME account key for each other certificate authority, when configured
 - `certificates\`: saved public certificate PEM files; transient PFX data is not retained
 - `locks\`: per-site cross-process operation locks shared by the GUI, CLI, and service
 - `transactions\`: durable certificate-operation journals, normally removed automatically after commit or recovery

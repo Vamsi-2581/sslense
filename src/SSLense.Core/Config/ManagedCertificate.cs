@@ -1,5 +1,14 @@
+using SSLense.Core.Acme;
+
 namespace SSLense.Core.Config;
 
+/// <param name="AuthorityId">
+/// The <see cref="CertificateAuthority"/> that issued this certificate and renews it. Schema 1 stored a
+/// staging/production environment instead; see <see cref="ManagedCertificateMigrations"/>.
+/// </param>
+/// <param name="Source">Whether SSLense obtains and renews this certificate, or it was installed from elsewhere.</param>
+/// <param name="Issuer">The issuing CA's name, as shown in the certificate, for display.</param>
+/// <param name="PendingRequest">A certificate request (CSR) waiting for the CA to issue its certificate.</param>
 public sealed record ManagedCertificate(
     string SiteName,
     IReadOnlyList<string> Hosts,
@@ -11,11 +20,14 @@ public sealed record ManagedCertificate(
     DateTimeOffset? LastRenewalAttempt = null,
     bool? LastRenewalSucceeded = null,
     string? LastRenewalMessage = null,
-    Acme.AcmeEnvironment Environment = Acme.AcmeEnvironment.Staging,
+    string AuthorityId = CertificateAuthorities.LetsEncryptStagingId,
     int ConsecutiveFailures = 0,
     DateTimeOffset? NextRetryAt = null,
     ExpiryWarningLevel ExpiryWarningSent = ExpiryWarningLevel.None,
-    Guid Id = default);
+    Guid Id = default,
+    CertificateSource Source = CertificateSource.Acme,
+    string? Issuer = null,
+    PendingCertificateRequest? PendingRequest = null);
 
 /// <summary>Expiry notification levels, each sent at most once per certificate.</summary>
 public enum ExpiryWarningLevel
@@ -25,3 +37,20 @@ public enum ExpiryWarningLevel
     Critical = 2,
     Expired = 3
 }
+
+public enum CertificateSource
+{
+    /// <summary>Obtained and renewed automatically by SSLense from an ACME certificate authority.</summary>
+    Acme = 0,
+
+    /// <summary>Obtained elsewhere (bought from a reseller, or issued by another tool) and renewed manually.</summary>
+    Imported = 1
+}
+
+/// <param name="KeyName">Name of the persisted, non-exportable machine key in the Windows key store.</param>
+/// <param name="KeyType">rsa2048, rsa3072, or ec256.</param>
+public sealed record PendingCertificateRequest(
+    string KeyName,
+    IReadOnlyList<string> Hosts,
+    string KeyType,
+    DateTimeOffset CreatedAt);

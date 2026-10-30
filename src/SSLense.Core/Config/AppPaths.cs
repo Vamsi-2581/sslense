@@ -14,11 +14,19 @@ public static class AppPaths
 
     public static string AccountKeyFile => Path.Combine(DataDirectory, "account-key.staging.dat");
 
-    public static string GetAccountKeyFile(Acme.AcmeEnvironment environment) => Path.Combine(
+    /// <summary>
+    /// One ACME account key per certificate authority. The Let's Encrypt profiles keep the file names they had
+    /// before other authorities were supported, so existing accounts are reused.
+    /// </summary>
+    public static string GetAccountKeyFile(string authorityId) => Path.Combine(
         DataDirectory,
-        environment == Acme.AcmeEnvironment.Production
-            ? "account-key.production.dat"
-            : "account-key.staging.dat");
+        authorityId switch
+        {
+            Acme.CertificateAuthorities.LetsEncryptStagingId => "account-key.staging.dat",
+            Acme.CertificateAuthorities.LetsEncryptId => "account-key.production.dat",
+            _ when Acme.CertificateAuthorities.IsValidId(authorityId) => $"account-key.{authorityId}.dat",
+            _ => throw new ArgumentException($"'{authorityId}' is not a valid certificate authority ID.", nameof(authorityId))
+        });
 
     public static string CertificateDirectory => Path.Combine(DataDirectory, "certificates");
 

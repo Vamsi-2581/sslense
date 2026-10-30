@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SSLense.Core.Config;
 
 namespace SSLense.Core.Certificates;
@@ -100,7 +101,18 @@ internal sealed class JsonCertificateTransactionJournal : ICertificateTransactio
     {
         try
         {
-            return JsonSerializer.Deserialize<CertificateTransaction>(json, SerializerOptions)
+            var node = JsonNode.Parse(json) as JsonObject
+                ?? throw new InvalidDataException($"Certificate transaction '{path}' is empty.");
+
+            // Entries written before schema 2 hold a schema 1 certificate snapshot. Upgrading it here keeps an
+            // interrupted production operation from being recovered as staging after an upgrade.
+            if ((node["schemaVersion"]?.GetValue<int>() ?? 0) < 2 && node["certificate"] is JsonObject certificate)
+            {
+                ManagedCertificateMigrations.UpgradeRecord(certificate);
+                node["schemaVersion"] = 2;
+            }
+
+            return node.Deserialize<CertificateTransaction>(SerializerOptions)
                 ?? throw new InvalidDataException($"Certificate transaction '{path}' is empty.");
         }
         catch (JsonException exception)
