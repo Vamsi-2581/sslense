@@ -32,6 +32,27 @@ public sealed class RenewalServiceTests
     }
 
     [Fact]
+    public async Task RenewAsync_ImportedCertificate_IsNeverSentToAnAcmeCa()
+    {
+        var managed = new Mock<IManagedCertificateStore>(MockBehavior.Strict);
+        managed.Setup(value => value.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([CreateCertificate(DateTimeOffset.UtcNow.AddDays(2)) with
+            {
+                Source = CertificateSource.Imported,
+                Issuer = "Sectigo RSA DV"
+            }]);
+        var acme = new Mock<IAcmeService>(MockBehavior.Strict);
+        var service = CreateService(managed, MockConfig(), acme);
+
+        var result = Assert.Single(await service.RenewAsync(new RenewalRequest(All: true, Force: true)));
+
+        Assert.False(result.Attempted);
+        Assert.True(result.Succeeded);
+        Assert.Contains("Sectigo RSA DV", result.Message, StringComparison.Ordinal);
+        acme.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task RenewAsync_AriWindowOverridesFallbackSchedule()
     {
         var managed = new Mock<IManagedCertificateStore>(MockBehavior.Strict);

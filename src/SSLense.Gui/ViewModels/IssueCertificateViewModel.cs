@@ -191,7 +191,7 @@ public partial class IssueCertificateViewModel : ObservableObject
                     SelectedHosts(),
                     Email,
                     Force: false,
-                    Environment: UseProduction ? AcmeEnvironment.Production : AcmeEnvironment.Staging),
+                    AuthorityId: UseProduction ? CertificateAuthorities.LetsEncryptId : CertificateAuthorities.LetsEncryptStagingId),
                 new Progress<ProgressEvent>(value =>
                     ProgressLines.Add($"[{DateTime.Now:HH:mm:ss}] [{value.Step}] {value.Message}")),
                 token).ConfigureAwait(true);

@@ -170,10 +170,15 @@ public sealed class HealthCheckServiceTests
                 .ReturnsAsync([IPAddress.Parse("203.0.113.10")]);
         }
 
+        var pending = new Mock<IPendingRequestStore>(MockBehavior.Strict);
+        pending.Setup(value => value.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+
         return new HealthCheckService(
             configStore.Object, managed.Object, journal.Object, serviceManager.Object, heartbeatStore.Object,
             iis.Object, store.Object, preflight.Object, resolver.Object,
-            new HttpClient(new StubHandler(acmeStatus)));
+            new HttpClient(new StubHandler(acmeStatus)),
+            CertificateAuthorityRegistry.BuiltInOnly,
+            pending.Object);
     }
 
     /// <summary>Answers every request locally, so the test never contacts Let's Encrypt.</summary>
@@ -181,7 +186,7 @@ public sealed class HealthCheckServiceTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Assert.Equal(AcmeEnvironment.Staging.DirectoryUri(), request.RequestUri);
+            Assert.Equal(CertificateAuthorities.LetsEncryptStaging.DirectoryUri, request.RequestUri);
             return Task.FromResult(new HttpResponseMessage(status));
         }
     }

@@ -31,7 +31,9 @@ internal sealed class HealthCheckService(
     ICertificateStore certificateStore,
     IPreflightService preflightService,
     IHostResolver hostResolver,
-    HttpClient httpClient) : IHealthCheckService
+    HttpClient httpClient,
+    ICertificateAuthorityRegistry authorities,
+    IPendingRequestStore pendingRequests) : IHealthCheckService
 {
     // The service checks hourly; three missed cycles means it is stuck or not running its loop.
     private static readonly TimeSpan HeartbeatStaleAfter = TimeSpan.FromHours(3);
@@ -113,11 +115,26 @@ internal sealed class HealthCheckService(
                 await Check($"HTTPS bindings: {site}", () => Task.FromResult(CheckBindings(certificate, sites)))
                     .ConfigureAwait(false);
                 await Check($"Expiry: {site}", () => Task.FromResult(CheckExpiry(certificate))).ConfigureAwait(false);
-                await Check($"Renewal history: {site}", () => Task.FromResult(CheckRenewalHistory(certificate)))
-                    .ConfigureAwait(false);
+                if (certificate.Source == CertificateSource.Imported)
+                {
+                    await Check($"Certificate chain: {site}", () => CheckChainAsync(certificate, cancellationToken))
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await Check($"Renewal history: {site}", () => Task.FromResult(CheckRenewalHistory(certificate)))
+                        .ConfigureAwait(false);
+                }
+
                 foreach (var host in certificate.Hosts)
                 {
                     await Check($"DNS: {host}", () => CheckDnsAsync(host, cancellationToken)).ConfigureAwait(false);
+                }
+
+                // Imported certificates are validated by their CA, not over HTTP on this server.
+                if (certificate.Source == CertificateSource.Imported)
+                {
+                    continue;
                 }
 
                 // Port 80 reachability and challenge-folder access, exactly as checked before issuance.
@@ -139,17 +156,22 @@ internal sealed class HealthCheckService(
                 }
             }
 
-            var environments = certificates.Select(value => value.Environment).Distinct().ToList();
-            if (environments.Count == 0)
-            {
-                environments.Add(AcmeEnvironment.Staging);
-            }
+            await Check("Pending certificate requests", () => CheckPendingRequestsAsync(cancellationToken)).ConfigureAwait(false);
 
-            foreach (var environment in environments)
+            // Every CA that renews a managed certificate; Let's Encrypt staging when nothing is managed yet.
+            var authorityIds = certificates
+                .Where(value => value.Source == CertificateSource.Acme)
+                .Select(value => value.AuthorityId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .DefaultIfEmpty(CertificateAuthorities.LetsEncryptStagingId);
+            foreach (var authorityId in authorityIds)
             {
                 await Check(
-                        $"Let's Encrypt {environment.DisplayName()}",
-                        () => CheckAcmeAsync(environment, cancellationToken))
+                        authorityId,
+                        async () => await CheckAcmeAsync(
+                                await authorities.GetAsync(authorityId, cancellationToken).ConfigureAwait(false),
+                                cancellationToken)
+                            .ConfigureAwait(false))
                     .ConfigureAwait(false);
             }
         }
@@ -260,7 +282,7 @@ internal sealed class HealthCheckService(
                 name,
                 HealthStatus.Fail,
                 $"Certificate {certificate.Thumbprint} is not in LocalMachine\\My.",
-                $"Run 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force' to issue and bind a new one.");
+                Reinstall(certificate, $"Run 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force' to issue and bind a new one."));
         }
 
         return installed.HasPrivateKey
@@ -269,7 +291,7 @@ internal sealed class HealthCheckService(
                 name,
                 HealthStatus.Fail,
                 $"Certificate {certificate.Thumbprint} is installed without its private key.",
-                $"Run 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force'.");
+                Reinstall(certificate, $"Run 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force'."));
     }
 
     private static HealthCheckResult CheckBindings(ManagedCertificate certificate, IReadOnlyList<IisSite> sites)
@@ -299,14 +321,24 @@ internal sealed class HealthCheckService(
                 name,
                 HealthStatus.Fail,
                 $"No HTTPS binding with the managed certificate for: {string.Join(", ", missing)}.",
-                $"Run 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force' to rebind.");
+                Reinstall(certificate, $"Run 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force' to rebind."));
     }
 
     private static HealthCheckResult CheckExpiry(ManagedCertificate certificate)
     {
         var name = $"Expiry: {certificate.SiteName}";
         var days = (int)Math.Floor((certificate.NotAfter - DateTimeOffset.UtcNow).TotalDays);
-        var environment = certificate.Environment.DisplayName();
+        if (certificate.Source == CertificateSource.Imported)
+        {
+            var issued = $"Imported certificate from {certificate.Issuer ?? "an external CA"} expires {certificate.NotAfter:yyyy-MM-dd HH:mm} UTC";
+            var replace = $"Order a replacement, then run 'SSLense.Cli csr --site \"{certificate.SiteName}\"' and 'complete', or 'import' a PFX.";
+            return days < 0 ? new HealthCheckResult(name, HealthStatus.Fail, $"{issued} and has expired.", replace)
+                : days <= 7 ? new HealthCheckResult(name, HealthStatus.Fail, $"{issued} ({days} days left).", replace)
+                : days <= 30 ? new HealthCheckResult(name, HealthStatus.Warning, $"{issued} ({days} days left).", replace)
+                : Pass(name, $"{issued} ({days} days left). It is renewed manually.");
+        }
+
+        var environment = CertificateAuthorities.Label(certificate.AuthorityId);
         var expires = $"{environment} certificate expires {certificate.NotAfter:yyyy-MM-dd HH:mm} UTC";
         return ExpiryMonitor.GetLevel(certificate, DateTimeOffset.UtcNow) switch
         {
@@ -321,6 +353,53 @@ internal sealed class HealthCheckService(
                 name, HealthStatus.Fail, $"{environment} certificate expired {certificate.NotAfter:yyyy-MM-dd HH:mm} UTC.",
                 $"Renew now: 'SSLense.Cli renew --site \"{certificate.SiteName}\" --force'.")
         };
+    }
+
+    /// <summary>The fix for a missing or unbound certificate: renew for ACME certificates, reinstall for imported ones.</summary>
+    private static string Reinstall(ManagedCertificate certificate, string acmeFix) =>
+        certificate.Source == CertificateSource.Imported
+            ? $"Reinstall it with 'SSLense.Cli import --site \"{certificate.SiteName}\" --pfx <file>', or create a request with " +
+              "'csr' and install the issued certificate with 'complete'."
+            : acmeFix;
+
+    private async Task<HealthCheckResult> CheckChainAsync(ManagedCertificate certificate, CancellationToken cancellationToken)
+    {
+        var name = $"Certificate chain: {certificate.SiteName}";
+        using var installed = await certificateStore.OpenAsync(certificate.Thumbprint, cancellationToken).ConfigureAwait(false);
+        if (installed is null)
+        {
+            return new HealthCheckResult(name, HealthStatus.Fail, $"Certificate {certificate.Thumbprint} is not installed.", Reinstall(certificate, string.Empty));
+        }
+
+        // Intermediates are looked up in the machine stores, as HTTP.sys does when it sends the chain.
+        return CertificateInspector.GetChainProblem(installed, []) is { } problem
+            ? new HealthCheckResult(
+                name,
+                HealthStatus.Fail,
+                problem,
+                "Without the intermediate certificate, some browsers and most API clients reject the site. Reinstall with the " +
+                "bundle: 'SSLense.Cli complete ... --chain <bundle>', or 'import' a PFX that includes the chain.")
+            : Pass(name, "The certificate chains to a trusted root.");
+    }
+
+    private async Task<HealthCheckResult> CheckPendingRequestsAsync(CancellationToken cancellationToken)
+    {
+        const string name = "Pending certificate requests";
+        var requests = await pendingRequests.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        if (requests.Count == 0)
+        {
+            return Pass(name, "No certificate requests are waiting for a certificate.");
+        }
+
+        var stale = requests.Where(request => DateTimeOffset.UtcNow - request.CreatedAt > TimeSpan.FromDays(30)).ToArray();
+        var list = string.Join(", ", requests.Select(request => $"{request.SiteName} ({request.CreatedAt:yyyy-MM-dd})"));
+        return stale.Length == 0
+            ? Pass(name, $"Waiting for the certificate authority: {list}.")
+            : new HealthCheckResult(
+                name,
+                HealthStatus.Warning,
+                $"Requests older than 30 days: {string.Join(", ", stale.Select(request => request.SiteName))}.",
+                "Install the issued certificate with 'SSLense.Cli complete', or remove the request with 'SSLense.Cli cancel-request'.");
     }
 
     private static HealthCheckResult CheckRenewalHistory(ManagedCertificate certificate)
@@ -364,22 +443,25 @@ internal sealed class HealthCheckService(
         }
     }
 
-    private async Task<HealthCheckResult> CheckAcmeAsync(AcmeEnvironment environment, CancellationToken cancellationToken)
+    private async Task<HealthCheckResult> CheckAcmeAsync(CertificateAuthority authority, CancellationToken cancellationToken)
     {
         // A directory GET creates nothing and needs no account; it only proves outbound HTTPS works.
-        var name = $"Let's Encrypt {environment.DisplayName()}";
+        var name = authority.Name;
+        var isLetsEncrypt = authority.Id is CertificateAuthorities.LetsEncryptId or CertificateAuthorities.LetsEncryptStagingId;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(NetworkTimeout);
         try
         {
-            using var response = await httpClient.GetAsync(environment.DirectoryUri(), timeout.Token).ConfigureAwait(false);
+            using var response = await httpClient.GetAsync(authority.DirectoryUri, timeout.Token).ConfigureAwait(false);
             return response.IsSuccessStatusCode
                 ? Pass(name, $"The ACME directory responded with HTTP {(int)response.StatusCode}.")
                 : new HealthCheckResult(
                     name,
                     HealthStatus.Fail,
                     $"The ACME directory responded with HTTP {(int)response.StatusCode}.",
-                    "Check https://letsencrypt.status.io for outages, and any outbound proxy.");
+                    isLetsEncrypt
+                        ? "Check https://letsencrypt.status.io for outages, and any outbound proxy."
+                        : "Check the certificate authority's status page for outages, and any outbound proxy.");
         }
         catch (Exception exception) when (exception is HttpRequestException ||
                                           exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
@@ -387,8 +469,8 @@ internal sealed class HealthCheckService(
             return new HealthCheckResult(
                 name,
                 HealthStatus.Fail,
-                $"Could not reach {environment.DirectoryUri()}: {exception.Message}",
-                "Allow outbound HTTPS (port 443) to Let's Encrypt, and check DNS, proxy, and TLS-inspection settings.");
+                $"Could not reach {authority.DirectoryUri}: {exception.Message}",
+                $"Allow outbound HTTPS (port 443) to {authority.DirectoryUri.Host}, and check DNS, proxy, and TLS-inspection settings.");
         }
     }
 

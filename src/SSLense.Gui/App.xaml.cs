@@ -42,6 +42,7 @@ public partial class App : Application
             builder.Services.AddSingleton<INavigationService, NavigationService>();
             builder.Services.AddSingleton<DashboardViewModel>();
             builder.Services.AddSingleton<IssueCertificateViewModel>();
+            builder.Services.AddSingleton<OtherProvidersViewModel>();
             builder.Services.AddSingleton<CertificateDetailsViewModel>();
             builder.Services.AddSingleton<SettingsViewModel>();
             builder.Services.AddSingleton<HealthViewModel>();

@@ -19,6 +19,9 @@
         <DataTemplate DataType="{x:Type vm:IssueCertificateViewModel}">
             <views:IssueCertificateView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:OtherProvidersViewModel}">
+            <views:OtherProvidersView />
+        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:CertificateDetailsViewModel}">
             <views:CertificateDetailsView />
         </DataTemplate>

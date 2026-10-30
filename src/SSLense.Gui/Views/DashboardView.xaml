@@ -71,7 +71,7 @@
                 <DockPanel Margin="18,14">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <Button Content="View details" Command="{Binding ViewDetailsCommand}" Margin="0,0,8,0" />
-                        <Button Content="Renew selected" Command="{Binding RenewSelectedCommand}" Margin="0,0,8,0" ToolTip="Immediately replace the selected certificate in its current ACME environment" />
+                        <Button Content="Renew selected" Command="{Binding RenewSelectedCommand}" Margin="0,0,8,0" ToolTip="Immediately replace the selected certificate from the CA that issued it. Imported certificates are skipped: order them from your provider." />
                         <Button Content="Renew all due" Command="{Binding RenewAllCommand}" />
                     </StackPanel>
                     <StackPanel><TextBlock Text="Managed certificates" Style="{StaticResource SectionTitle}" /><TextBlock Text="Select a certificate to manage it." Style="{StaticResource CaptionText}" Margin="0,3,0,0" /></StackPanel>
@@ -82,7 +82,7 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Site" Binding="{Binding SiteName}" Width="1.2*" />
                     <DataGridTextColumn Header="Host names" Binding="{Binding Hosts}" Width="2.2*" />
-                    <DataGridTextColumn Header="Environment" Binding="{Binding Environment}" Width="105" />
+                    <DataGridTextColumn Header="Source" Binding="{Binding Environment}" Width="110" />
                     <DataGridTextColumn Header="Expires" Binding="{Binding Expiry, StringFormat={}{0:dd MMM yyyy}}" Width="130" />
                     <DataGridTextColumn Header="Days left" Binding="{Binding DaysRemaining}" Width="90" />
                     <DataGridTemplateColumn Header="Status" Width="130">

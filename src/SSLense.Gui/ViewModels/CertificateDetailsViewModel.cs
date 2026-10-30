@@ -89,7 +89,7 @@ public partial class CertificateDetailsViewModel : ObservableObject
             IssueDate = detail.NotBefore.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
             ExpiryDate = detail.NotAfter.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
             BoundSites = detail.BoundSites.Count == 0 ? "None" : string.Join(", ", detail.BoundSites);
-            Environment = detail.Environment.DisplayName();
+            Environment = detail.AuthorityName;
             RecentLogLines.Clear();
             foreach (var line in detail.RecentLogLines) RecentLogLines.Add(line);
         }, cancellationToken);

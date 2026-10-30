@@ -7,6 +7,7 @@ public partial class MainViewModel : ObservableObject
     private readonly DashboardViewModel _dashboard;
     private readonly LogsViewModel _logs;
     private readonly IssueCertificateViewModel _issue;
+    private readonly OtherProvidersViewModel _otherProviders;
     private readonly CertificateDetailsViewModel _details;
     private readonly SettingsViewModel _settings;
     private readonly INavigationService _navigation;
@@ -18,6 +19,7 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(
         DashboardViewModel dashboard,
         IssueCertificateViewModel issue,
+        OtherProvidersViewModel otherProviders,
         CertificateDetailsViewModel details,
         SettingsViewModel settings,
         HealthViewModel health,
@@ -27,6 +29,7 @@ public partial class MainViewModel : ObservableObject
         _dashboard = dashboard;
         _logs = logs;
         _issue = issue;
+        _otherProviders = otherProviders;
         _details = details;
         _settings = settings;
         _navigation = navigation;
@@ -34,6 +37,7 @@ public partial class MainViewModel : ObservableObject
         [
             new NavigationItem("Dashboard", "\uE80F", dashboard),
             new NavigationItem("Issue Certificate", "\uE710", issue),
+            new NavigationItem("Other Providers", "\uE8D4", otherProviders),
             new NavigationItem("Certificate Details", "\uE8D7", details),
             new NavigationItem("Settings", "\uE713", settings),
             new NavigationItem("Health", "\uE95E", health),
@@ -78,6 +82,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (ReferenceEquals(page.ViewModel, _dashboard)) await _dashboard.InitializeAsync();
         else if (ReferenceEquals(page.ViewModel, _issue)) await _issue.InitializeAsync();
+        else if (ReferenceEquals(page.ViewModel, _otherProviders)) await _otherProviders.InitializeAsync();
         else if (ReferenceEquals(page.ViewModel, _details)) await _details.InitializeAsync(context);
         else if (ReferenceEquals(page.ViewModel, _settings)) await _settings.InitializeAsync();
     }

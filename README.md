@@ -116,6 +116,34 @@ dotnet run --project .\src\SSLense.Cli -- renew --site "My IIS Site" --force
 
 SSLense removes an old certificate only after the replacement binding is confirmed and no other IIS binding references the old thumbprint.
 
+### Certificates from other providers (bring your own)
+
+Some sites use a certificate bought from a provider such as 123-reg, Sectigo or DigiCert. In the desktop app, use the **Other Providers** page. SSLense installs and binds these certificates with the same safeguards (validation first, HTTPS verification, automatic rollback) and reminds you to order the next one. It never tries to renew them itself.
+
+Order a certificate with a request (CSR) created on this server. The private key is a non-exportable machine key that never leaves the server:
+
+```powershell
+SSLense.Cli csr --site "Shop" --hosts shop.example.com,www.shop.example.com   # saves sslense-shop.example.com-<date>.csr on the Desktop
+# Paste the request into the provider's order form. When the certificate is issued:
+SSLense.Cli complete --site "Shop" --certificate .\shop_example_com.crt --chain .\shop_example_com.ca-bundle
+SSLense.Cli pending                        # open requests
+SSLense.Cli cancel-request --site "Shop"   # abandon a request and delete its key
+```
+
+`--key rsa3072` or `--key ec256` changes the key type (default `rsa2048`, which every provider accepts). Certificate files can be PEM (`.crt`, `.pem`, including several certificates in one file) or DER (`.cer`). For `.p7b` bundles, export the certificates as Base-64 `.cer` first.
+
+Import a certificate that already has its key, or start monitoring one that is already bound in IIS without changing anything:
+
+```powershell
+SSLense.Cli import --site "Shop" --pfx .\shop.pfx      # password prompted; --hosts defaults to the site's covered host names
+SSLense.Cli discover                                   # HTTPS bindings and whether SSLense manages them
+SSLense.Cli adopt --site "Shop"                        # --thumbprint when the site uses several certificates
+```
+
+Before anything changes, SSLense checks that the certificate covers the hosts, is currently valid, is meant for server authentication, matches the private key, and chains to a trusted root (missing intermediates are reported with a hint to use `--chain`). Replacing a certificate SSLense renews from Let's Encrypt needs `--force`. The previous certificate is left in the certificate store.
+
+Imported certificates get reminders through every notification channel at 30, 14, 7 and 1 days before expiry, and again when expired. `renew` skips them, and `status` shows them as renewed manually.
+
 ## Notifications
 
 SSLense sends renewal failures, expiry warnings, and (optionally) successful renewals. Every organisation's mail and chat setup differs, so channels can be combined freely; configure them under **Settings** in the GUI or with `SSLense.Cli notifications`. Passwords and URLs are encrypted with DPAPI, typed without echo, and never logged or displayed; only their host names are shown.
@@ -248,6 +276,7 @@ Windows displays an administrator elevation prompt because the application manif
 - A live log viewer with level filtering and access to the log folder
 - A visual three-step issuance wizard with IIS selection, guarded environment choice, pre-flight checks, live progress, and cancellation
 - Certificate details, renewal, confirmed removal, bindings, issuer, validity, and recent logs
+- An **Other Providers** page for certificates bought elsewhere: create a request (CSR) to copy or save, complete it with the issued certificate and bundle, import a PFX, or adopt a certificate already bound in IIS. Imported certificates show as "Imported" on the Dashboard, with "Order renewal" when 30 days or fewer remain
 - General, SMTP/webhook, and Windows Service settings
 
 Staging remains the wizard default. Production requires a separate selection and acknowledgement before the Issue button is enabled. Use **Issue certificate** on the Dashboard to open the wizard. Removing a certificate requires confirmation and removes only matching HTTPS bindings; a certificate still used by another IIS site is retained in the Windows certificate store.
@@ -277,6 +306,8 @@ SSLense stores files under `C:\ProgramData\SSLense`:
 - `managed-certificates.json`: sites, hosts, certificate dates, thumbprints, and renewal results
 - `account-key.staging.dat`: DPAPI-protected staging ACME account key
 - `account-key.production.dat`: separate DPAPI-protected production ACME account key, created only when production is used
+- `account-key.<authority-id>.dat`: one DPAPI-protected ACME account key for each other certificate authority, when configured
+- `pending-requests.json`: open certificate requests (CSRs) for certificates from other providers; the matching private keys are non-exportable keys in the Windows machine key store, never files
 - `certificates\`: saved public certificate PEM files; transient PFX data is not retained
 - `locks\`: per-site cross-process operation locks shared by the GUI, CLI, and service
 - `transactions\`: durable certificate-operation journals, normally removed automatically after commit or recovery
@@ -284,7 +315,7 @@ SSLense stores files under `C:\ProgramData\SSLense`:
 - `service-heartbeat.json`: when the renewal service last started and completed a cycle, used by the health check
 - `logs\sslense-YYYYMMDD.log`: rolling logs retained for 30 days
 
-`config.json`, `managed-certificates.json`, and transaction journals carry a `schemaVersion`. Before SSLense first rewrites a file from an older schema, it saves the original as `<file>.v<old version>.bak` (for example `managed-certificates.json.v0.bak`). A file written by a newer SSLense version is never modified: SSLense stops with a message to install the newer version, so a downgrade cannot corrupt state.
+`config.json`, `managed-certificates.json`, `pending-requests.json`, and transaction journals carry a `schemaVersion`. Before SSLense first rewrites a file from an older schema, it saves the original as `<file>.v<old version>.bak` (for example `managed-certificates.json.v0.bak`). A file written by a newer SSLense version is never modified: SSLense stops with a message to install the newer version, so a downgrade cannot corrupt state.
 
 Private keys, PFX passwords, SMTP passwords, webhook URLs, and the ACME account key must never appear in logs.
 

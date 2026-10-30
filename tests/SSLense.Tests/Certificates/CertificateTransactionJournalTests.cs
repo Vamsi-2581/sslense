@@ -17,7 +17,7 @@ public sealed class CertificateTransactionJournalTests
             var certificate = new ManagedCertificate(
                 "My Site", ["example.com"], "admin@example.com", "AABBCC",
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(45),
-                Environment: AcmeEnvironment.Production);
+                AuthorityId: CertificateAuthorities.LetsEncryptId);
 
             var transaction = await journal.BeginAsync(certificate, "OLD");
             await journal.UpdateStageAsync(
@@ -26,7 +26,7 @@ public sealed class CertificateTransactionJournalTests
 
             var reloaded = Assert.Single(await journal.GetPendingAsync());
             Assert.Equal(CertificateTransactionStage.BindingsUpdated, reloaded.Stage);
-            Assert.Equal(AcmeEnvironment.Production, reloaded.Certificate.Environment);
+            Assert.Equal(CertificateAuthorities.LetsEncryptId, reloaded.Certificate.AuthorityId);
 
             await journal.CompleteAsync(transaction.Id);
 

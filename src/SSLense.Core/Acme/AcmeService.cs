@@ -19,6 +19,7 @@ internal sealed class AcmeService : IAcmeService
     private readonly IManagedCertificateStore _managedCertificateStore;
     private readonly ICertificateOperationLock _operationLock;
     private readonly ICertificateTransactionJournal _transactionJournal;
+    private readonly ICertificateAuthorityRegistry _authorities;
 
     public AcmeService(
         IIisService iisService,
@@ -29,7 +30,8 @@ internal sealed class AcmeService : IAcmeService
         ICertificateStore certificateStore,
         IManagedCertificateStore managedCertificateStore,
         ICertificateOperationLock? operationLock = null,
-        ICertificateTransactionJournal? transactionJournal = null)
+        ICertificateTransactionJournal? transactionJournal = null,
+        ICertificateAuthorityRegistry? authorities = null)
     {
         _iisService = iisService;
         _protocolClient = protocolClient;
@@ -40,6 +42,7 @@ internal sealed class AcmeService : IAcmeService
         _managedCertificateStore = managedCertificateStore;
         _operationLock = operationLock ?? new NoOpCertificateOperationLock();
         _transactionJournal = transactionJournal ?? new NoOpCertificateTransactionJournal();
+        _authorities = authorities ?? CertificateAuthorityRegistry.BuiltInOnly;
     }
 
     public async Task<AcmeIssueResult> IssueAsync(
@@ -54,7 +57,8 @@ internal sealed class AcmeService : IAcmeService
             .AcquireAsync(request.SiteName, cancellationToken)
             .ConfigureAwait(false);
         await EnsureExpectedCertificateAsync(request, cancellationToken).ConfigureAwait(false);
-        var environmentName = request.Environment.DisplayName();
+        var authority = await _authorities.GetAsync(request.AuthorityId, cancellationToken).ConfigureAwait(false);
+        var environmentName = CertificateAuthorities.Label(authority.Id);
 
         progress?.Report(new ProgressEvent("preflight", "Checking the IIS site and HTTP bindings."));
         var sites = await _iisService.GetSitesAsync(cancellationToken).ConfigureAwait(false);
@@ -91,7 +95,7 @@ internal sealed class AcmeService : IAcmeService
 
         if (!request.Force)
         {
-            await ThrowIfAlreadyCoveredAsync(site, hosts, request.Environment, cancellationToken)
+            await ThrowIfAlreadyCoveredAsync(site, hosts, authority, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -101,17 +105,13 @@ internal sealed class AcmeService : IAcmeService
         IAcmeOrderSession order;
         try
         {
-            order = request.Environment == AcmeEnvironment.Staging
-                ? await _protocolClient.CreateOrderAsync(request.Email.Trim(), hosts, cancellationToken)
-                    .ConfigureAwait(false)
-                : await _protocolClient.CreateOrderAsync(
-                        request.Email.Trim(), hosts, request.Environment, cancellationToken)
-                    .ConfigureAwait(false);
+            order = await _protocolClient.CreateOrderAsync(request.Email.Trim(), hosts, authority, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (HttpRequestException exception)
         {
             throw new InvalidOperationException(
-                $"Could not contact the Let's Encrypt {environmentName} service. " +
+                $"Could not contact the {authority.Name} service. " +
                 "Check outbound HTTPS, DNS, proxy, and TLS settings.",
                 exception);
         }
@@ -174,7 +174,8 @@ internal sealed class AcmeService : IAcmeService
                 DateTimeOffset.UtcNow,
                 true,
                 "Certificate issued and bound successfully.",
-                request.Environment);
+                authority.Id,
+                Issuer: publicCertificate.GetNameInfo(X509NameType.SimpleName, forIssuer: true));
             var transaction = await _transactionJournal.BeginAsync(
                     preparedRecord,
                     request.ExpectedCurrentThumbprint,
@@ -292,7 +293,7 @@ internal sealed class AcmeService : IAcmeService
     private async Task ThrowIfAlreadyCoveredAsync(
         IisSite site,
         IReadOnlyList<string> hosts,
-        AcmeEnvironment requestedEnvironment,
+        CertificateAuthority requestedAuthority,
         CancellationToken cancellationToken)
     {
         var httpsBindings = hosts
@@ -322,9 +323,9 @@ internal sealed class AcmeService : IAcmeService
         if (certificate is not null && certificate.HasPrivateKey &&
             certificate.NotBefore <= now && certificate.NotAfter > now)
         {
-            // A staging certificate is untrusted, so it never satisfies a production request.
-            if (requestedEnvironment == AcmeEnvironment.Production &&
-                await IsStagingCertificateAsync(site.Name, certificate, cancellationToken).ConfigureAwait(false))
+            // A certificate from a test CA is untrusted, so it never satisfies a request to a real CA.
+            if (!requestedAuthority.IsTest &&
+                await IsTestCertificateAsync(site.Name, certificate, cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
@@ -336,7 +337,7 @@ internal sealed class AcmeService : IAcmeService
         }
     }
 
-    private async Task<bool> IsStagingCertificateAsync(
+    private async Task<bool> IsTestCertificateAsync(
         string siteName,
         InstalledCertificate certificate,
         CancellationToken cancellationToken)
@@ -348,13 +349,19 @@ internal sealed class AcmeService : IAcmeService
         }
 
         var records = await _managedCertificateStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        return records.Any(record =>
-            string.Equals(record.SiteName, siteName, StringComparison.OrdinalIgnoreCase) &&
+        var record = records.FirstOrDefault(value =>
+            string.Equals(value.SiteName, siteName, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(
-                NormalizeThumbprint(record.Thumbprint),
+                NormalizeThumbprint(value.Thumbprint),
                 NormalizeThumbprint(certificate.Thumbprint),
-                StringComparison.Ordinal) &&
-            record.Environment == AcmeEnvironment.Staging);
+                StringComparison.Ordinal));
+        if (record is null || record.Source != CertificateSource.Acme)
+        {
+            return false;
+        }
+
+        var authorities = await _authorities.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        return authorities.Any(value => value.IsTest && string.Equals(value.Id, record.AuthorityId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static void ValidateRequest(AcmeIssueRequest request)

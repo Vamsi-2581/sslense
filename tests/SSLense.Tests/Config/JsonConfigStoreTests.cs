@@ -119,10 +119,16 @@ public sealed class JsonConfigStoreTests
         await store.SaveAsync(expected);
         var actual = await store.LoadAsync();
 
-        // Records compare list properties by reference, so the (empty) chat list is compared by content.
+        // Records compare list properties by reference, so the (empty) lists are compared by content.
         Assert.Empty(actual.Notifications.Chat);
+        Assert.Empty(actual.CertificateAuthorities);
         Assert.Equal(
-            expected with { SchemaVersion = StateSchema.Config, Notifications = actual.Notifications },
+            expected with
+            {
+                SchemaVersion = StateSchema.Config,
+                Notifications = actual.Notifications,
+                CertificateAuthorities = actual.CertificateAuthorities
+            },
             actual);
         Assert.Equal(expected.Notifications with { Chat = actual.Notifications.Chat }, actual.Notifications);
         Assert.Contains("\"useStaging\": true", persistedJson, StringComparison.Ordinal);

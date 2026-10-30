@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddSingleton<IManagedCertificateStore, JsonManagedCertificateStore>();
         services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
         services.AddSingleton<IAcmeAccountStore, AcmeAccountStore>();
+        services.AddSingleton<ICertificateAuthorityRegistry, CertificateAuthorityRegistry>();
         services.AddSingleton<IChallengeProbe, HttpChallengeProbe>();
         services.AddSingleton<IChallengeJournal, JsonChallengeJournal>();
         services.AddTransient<IChallengeHandler, Http01Handler>();
@@ -49,6 +50,9 @@ public static class DependencyInjection
         services.AddTransient<IPreflightService, PreflightService>();
         services.AddTransient<ISettingsService, SettingsService>();
         services.AddTransient<ICertificateManagementService, CertificateManagementService>();
+        services.AddSingleton<IPendingRequestStore, JsonPendingRequestStore>();
+        services.AddSingleton<IPrivateKeyStore>(_ => new CngPrivateKeyStore(machineScope: true));
+        services.AddTransient<IImportedCertificateService, ImportedCertificateService>();
         services.AddSingleton<IServiceHeartbeatStore, JsonServiceHeartbeatStore>();
         services.AddSingleton<IHostResolver, DnsHostResolver>();
         services.AddTransient<IHealthCheckService, HealthCheckService>();

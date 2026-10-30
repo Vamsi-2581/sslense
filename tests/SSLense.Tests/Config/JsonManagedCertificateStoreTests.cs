@@ -75,7 +75,7 @@ public sealed class JsonManagedCertificateStoreTests
             "My Site", DateTimeOffset.UtcNow, "failed", DateTimeOffset.UtcNow.AddHours(1));
 
         Assert.Equal(LegacyJson, fileSystem.Files[$"{StatePath}.v0.bak"]);
-        Assert.Contains("\"schemaVersion\": 1", fileSystem.Files[StatePath], StringComparison.Ordinal);
+        Assert.Contains($"\"schemaVersion\": {StateSchema.ManagedCertificates}", fileSystem.Files[StatePath], StringComparison.Ordinal);
         Assert.Equal(migratedId, Assert.Single(await store.GetAllAsync()).Id);
     }
 
@@ -137,6 +137,19 @@ public sealed class JsonManagedCertificateStoreTests
         await store.RecordExpiryWarningAsync("My Site", "REPLACED", ExpiryWarningLevel.Expired);
 
         Assert.Equal(ExpiryWarningLevel.Critical, Assert.Single(await store.GetAllAsync()).ExpiryWarningSent);
+    }
+
+    [Fact]
+    public async Task RecordImportedReminderAsync_OnlyMovesTowardsExpiry()
+    {
+        var store = new JsonManagedCertificateStore(new InMemoryFileSystem(), StatePath, LockPath);
+        await store.UpsertAsync(CreateCertificate() with { Source = CertificateSource.Imported });
+
+        await store.RecordImportedReminderAsync("My Site", "AABBCC", 14);
+        await store.RecordImportedReminderAsync("My Site", "AABBCC", 30);
+        await store.RecordImportedReminderAsync("My Site", "REPLACED", 1);
+
+        Assert.Equal(14, Assert.Single(await store.GetAllAsync()).ReminderDaysSent);
     }
 
     private const string LegacyJson = """

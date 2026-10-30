@@ -15,14 +15,9 @@ internal sealed class AcmeAccountStore : IAcmeAccountStore
         _protector = protector;
     }
 
-    public Task<string?> LoadKeyAsync(CancellationToken cancellationToken) =>
-        LoadKeyAsync(AcmeEnvironment.Staging, cancellationToken);
-
-    public async Task<string?> LoadKeyAsync(
-        AcmeEnvironment environment,
-        CancellationToken cancellationToken)
+    public async Task<string?> LoadKeyAsync(string authorityId, CancellationToken cancellationToken)
     {
-        var path = AppPaths.GetAccountKeyFile(environment);
+        var path = AppPaths.GetAccountKeyFile(authorityId);
         if (!_fileSystem.FileExists(path))
         {
             return null;
@@ -49,13 +44,7 @@ internal sealed class AcmeAccountStore : IAcmeAccountStore
         }
     }
 
-    public Task SaveKeyAsync(string accountKeyPem, CancellationToken cancellationToken) =>
-        SaveKeyAsync(AcmeEnvironment.Staging, accountKeyPem, cancellationToken);
-
-    public async Task SaveKeyAsync(
-        AcmeEnvironment environment,
-        string accountKeyPem,
-        CancellationToken cancellationToken)
+    public async Task SaveKeyAsync(string authorityId, string accountKeyPem, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(accountKeyPem);
 
@@ -64,7 +53,7 @@ internal sealed class AcmeAccountStore : IAcmeAccountStore
         {
             var encrypted = _protector.Protect(plaintext);
             await _fileSystem.WriteAllTextAtomicAsync(
-                    AppPaths.GetAccountKeyFile(environment),
+                    AppPaths.GetAccountKeyFile(authorityId),
                     Convert.ToBase64String(encrypted),
                     cancellationToken)
                 .ConfigureAwait(false);

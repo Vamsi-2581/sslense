@@ -12,4 +12,7 @@ public sealed record AppConfig
     public int RenewalThresholdDays { get; init; } = 30;
 
     public NotificationConfig Notifications { get; init; } = new();
+
+    /// <summary>Certificate authorities added by the administrator. The Let's Encrypt profiles are built in.</summary>
+    public IReadOnlyList<Acme.CertificateAuthority> CertificateAuthorities { get; init; } = [];
 }

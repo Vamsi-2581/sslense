@@ -84,6 +84,55 @@ public sealed class ExpiryMonitorTests
             Times.Never());
     }
 
+    [Theory]
+    [InlineData(45, null, null)]
+    [InlineData(29.5, null, 30)]
+    [InlineData(29.5, 30, null)]
+    [InlineData(10, 30, 14)]
+    // Installed late: only the closest reminder is sent, not every one that was missed.
+    [InlineData(5, null, 7)]
+    [InlineData(0.5, 7, 1)]
+    [InlineData(0.5, 1, null)]
+    public void GetImportedReminder_SendsEachThresholdOnce(double remainingDays, int? alreadySent, int? expected)
+    {
+        var certificate = CreateCertificate(Now.AddDays(-300), Now.AddDays(remainingDays)) with
+        {
+            Source = CertificateSource.Imported,
+            ReminderDaysSent = alreadySent
+        };
+
+        Assert.Equal(expected, ExpiryMonitor.GetImportedReminder(certificate, Now));
+    }
+
+    [Fact]
+    public async Task CheckAsync_ImportedCertificate_RemindsToOrderAReplacementAndRecordsIt()
+    {
+        var imported = CreateCertificate(DateTimeOffset.UtcNow.AddDays(-355), DateTimeOffset.UtcNow.AddDays(10)) with
+        {
+            Source = CertificateSource.Imported,
+            Issuer = "Sectigo RSA DV",
+            ReminderDaysSent = 30
+        };
+        var managed = new Mock<IManagedCertificateStore>(MockBehavior.Strict);
+        managed.Setup(value => value.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([imported]);
+        managed.Setup(value => value.RecordImportedReminderAsync("My Site", "AABBCC", 14, CancellationToken.None))
+            .Returns(Task.CompletedTask);
+        var notifier = new Mock<INotifier>(MockBehavior.Strict);
+        notifier.Setup(value => value.NotifyAsync(
+                It.Is<NotificationMessage>(message =>
+                    message.Severity == NotificationSeverity.Warning &&
+                    message.Body.Contains("Sectigo RSA DV", StringComparison.Ordinal) &&
+                    message.Body.Contains("SSLense.Cli csr", StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var message = Assert.Single(await new ExpiryMonitor(managed.Object, notifier.Object).CheckAsync());
+
+        Assert.Contains("14-day", message, StringComparison.Ordinal);
+        managed.VerifyAll();
+        notifier.VerifyAll();
+    }
+
     private static ManagedCertificate CreateCertificate(DateTimeOffset notBefore, DateTimeOffset notAfter) => new(
         "My Site", ["example.com"], "admin@example.com", "AABBCC", notBefore, notAfter);
 }

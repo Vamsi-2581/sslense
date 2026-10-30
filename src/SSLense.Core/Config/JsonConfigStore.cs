@@ -57,6 +57,7 @@ public sealed class JsonConfigStore : IConfigStore
             config = config.Notifications is null
                 ? config with { Notifications = new NotificationConfig() }
                 : config with { Notifications = config.Notifications with { Chat = config.Notifications.Chat ?? [] } };
+            config = config with { CertificateAuthorities = config.CertificateAuthorities ?? [] };
 
             // Migrated in memory; the file is rewritten (after a backup) the next time settings are saved.
             return ConfigMigrations.Migrate(config);
