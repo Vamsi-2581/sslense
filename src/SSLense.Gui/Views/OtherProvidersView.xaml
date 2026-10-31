@@ -25,7 +25,7 @@
                Text="Creates a certificate signing request (CSR) to paste into the provider's order form. The private key is created in Windows on this server, cannot be exported, and never leaves it."/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.4*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <StackPanel Margin="0,0,14,0"><TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding RequestSite}" DisplayMemberPath="Name" AutomationProperties.Name="Site for the request"/></StackPanel>
-     <StackPanel Grid.Column="1" Margin="0,0,14,0"><TextBlock Text="HOST NAMES (COMMA-SEPARATED; THE FIRST IS THE COMMON NAME)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding RequestHosts, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Host names for the request"/></StackPanel>
+     <StackPanel Grid.Column="1" Margin="0,0,14,0"><TextBlock Text="HOST NAMES (COMMA-SEPARATED)" Style="{StaticResource FieldLabel}" ToolTip="The first host name becomes the certificate's common name."/><TextBox Text="{Binding RequestHosts, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Host names for the request"/></StackPanel>
      <StackPanel Grid.Column="2"><TextBlock Text="KEY TYPE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding KeyTypes}" SelectedItem="{Binding SelectedKeyType}" DisplayMemberPath="Label" AutomationProperties.Name="Key type"/></StackPanel>
     </Grid>
     <Button Content="Create request" Command="{Binding CreateRequestCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,16,0,0"/>

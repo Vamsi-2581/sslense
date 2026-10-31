@@ -90,7 +90,7 @@
                     <DataGridTextColumn Header="Reminders" Binding="{Binding Reminders}" Width="140" />
                     <DataGridTemplateColumn Header="Status" Width="130">
                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                            <Border x:Name="StatusBadge" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="9,3" HorizontalAlignment="Left">
+                            <Border x:Name="StatusBadge" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="9,3" HorizontalAlignment="Left" VerticalAlignment="Center">
                                 <TextBlock x:Name="StatusText" Text="{Binding Status}" Foreground="{StaticResource SuccessBrush}" FontSize="11" FontWeight="SemiBold" />
                             </Border>
                             <DataTemplate.Triggers>

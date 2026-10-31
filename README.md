@@ -8,7 +8,7 @@
 
 SSLense is a Windows application for IIS administrators. It gets free Let's Encrypt certificates onto your IIS sites and keeps them renewed. It also keeps track of the certificates you buy from providers such as 123-reg, Sectigo or DigiCert, and tells you in time to order the next one. It comes with a desktop app, a command line, and a background service. Website: [sslense.com](https://sslense.com).
 
-<!-- Screenshot: add docs/images/dashboard.png and link it here. -->
+![The SSLense dashboard: managed certificates with their source, expiry, reminder setting and health](docs/images/SSLense-Dashboard.png)
 
 ## Why SSLense
 
@@ -29,6 +29,23 @@ SSLense is a Windows application for IIS administrators. It gets free Let's Encr
 4. Under **Settings**, add an email or chat channel and click **Send test**, then check **Settings → Reminders**.
 
 From then on the service renews Let's Encrypt certificates on its own, and the daily digest reminds you about anything that needs you. Everything in the app is also available from the command line; see [CLI usage](#cli-usage).
+
+<details>
+<summary><b>More screenshots</b></summary>
+
+**Issue a certificate:** pick the site and host names. A site that already serves HTTPS shows which certificate it uses.
+
+![Issue Certificate: choosing the IIS site and host names](docs/images/SSLense-IssueCertificate.png)
+
+**Other providers:** create a request for a certificate you buy elsewhere, complete it, import a PFX, or adopt one already in IIS.
+
+![Other Providers: requesting, completing, and importing certificates from other providers](docs/images/SSLense-OtherProviders.png)
+
+**Settings → Reminders:** when the daily digest starts, how often it repeats, and when it is sent.
+
+![Settings: reminder schedule with Send sample digest](docs/images/SSLense-Settings.png)
+
+</details>
 
 ## Get involved
 
