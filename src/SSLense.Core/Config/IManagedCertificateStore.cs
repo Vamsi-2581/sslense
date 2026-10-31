@@ -5,7 +5,11 @@ public interface IManagedCertificateStore
     Task<IReadOnlyList<ManagedCertificate>> GetAllAsync(
         CancellationToken cancellationToken = default);
 
-    /// <summary>Replaces the site's record. An empty <see cref="ManagedCertificate.Id"/> keeps the site's existing ID.</summary>
+    /// <summary>
+    /// Replaces the site's record. An empty <see cref="ManagedCertificate.Id"/> keeps the site's existing ID. The reminder
+    /// fields are kept from the existing record; when the thumbprint changes they reset, except
+    /// <see cref="ReminderMode.Off"/>, which is permanent.
+    /// </summary>
     Task UpsertAsync(
         ManagedCertificate certificate,
         CancellationToken cancellationToken = default);
@@ -22,24 +26,17 @@ public interface IManagedCertificateStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Records that an expiry notification was sent. Ignored when the site's certificate has since changed
-    /// or a higher level was already recorded.
+    /// Records what a delivered digest said about each certificate. An entry is ignored when its site's certificate
+    /// has been replaced since the digest was built.
     /// </summary>
-    Task RecordExpiryWarningAsync(
-        string siteName,
-        string thumbprint,
-        ExpiryWarningLevel level,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Records that the given "days before expiry" reminder was sent for an imported certificate. Ignored when the
-    /// certificate has since been replaced, or a closer reminder was already recorded.
-    /// </summary>
-    Task RecordImportedReminderAsync(
-        string siteName,
-        string thumbprint,
-        int days,
+    Task RecordRemindersAsync(
+        IReadOnlyList<ReminderRecord> sent,
+        DateTimeOffset sentAt,
         CancellationToken cancellationToken = default);
 
     Task RemoveAsync(string siteName, CancellationToken cancellationToken = default);
 }
+
+/// <param name="Reminded">Listed as needing attention, which starts the repeat interval again.</param>
+/// <param name="NoticeSent">Listed as an upcoming automatic renewal, which is said only once.</param>
+public sealed record ReminderRecord(string SiteName, string Thumbprint, bool Reminded, bool NoticeSent);

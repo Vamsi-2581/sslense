@@ -340,7 +340,7 @@ internal sealed class HealthCheckService(
 
         var environment = CertificateAuthorities.Label(certificate.AuthorityId);
         var expires = $"{environment} certificate expires {certificate.NotAfter:yyyy-MM-dd HH:mm} UTC";
-        return ExpiryMonitor.GetLevel(certificate, DateTimeOffset.UtcNow) switch
+        return ExpiryLevels.GetLevel(certificate, DateTimeOffset.UtcNow) switch
         {
             ExpiryWarningLevel.None => Pass(name, $"{expires} ({days} days left)."),
             ExpiryWarningLevel.Warning => new HealthCheckResult(

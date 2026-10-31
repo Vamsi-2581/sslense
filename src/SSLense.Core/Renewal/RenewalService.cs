@@ -313,6 +313,14 @@ internal sealed class RenewalService : IRenewalService
         }
     }
 
+    public async Task<DateTimeOffset> GetScheduledRenewalAsync(
+        ManagedCertificate certificate,
+        CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        return await GetRenewalTimeAsync(certificate, config, progress: null, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<DateTimeOffset> GetRenewalTimeAsync(
         ManagedCertificate certificate,
         AppConfig config,

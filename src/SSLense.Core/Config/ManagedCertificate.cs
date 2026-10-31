@@ -8,9 +8,14 @@ namespace SSLense.Core.Config;
 /// </param>
 /// <param name="Source">Whether SSLense obtains and renews this certificate, or it was installed from elsewhere.</param>
 /// <param name="Issuer">The issuing CA's name, as shown in the certificate, for display.</param>
-/// <param name="ReminderDaysSent">
-/// For imported certificates, the smallest "days before expiry" reminder already sent (30, 14, 7, or 1).
-/// </param>
+/// <param name="Reminders">Whether this certificate is included in reminder digests; see <see cref="ReminderMode"/>.</param>
+/// <param name="SnoozedUntil">With <see cref="ReminderMode.Snoozed"/>, when reminders resume.</param>
+/// <param name="LastRemindedAt">When this certificate was last included in a sent digest as needing attention.</param>
+/// <param name="UpcomingNoticeSent">Whether the one upcoming-renewal notice was sent for this certificate.</param>
+/// <remarks>
+/// The reminder fields belong to the record, not to a certificate: <see cref="IManagedCertificateStore.UpsertAsync"/> keeps
+/// them across installs and resets them when the thumbprint changes (except <see cref="ReminderMode.Off"/>).
+/// </remarks>
 public sealed record ManagedCertificate(
     string SiteName,
     IReadOnlyList<string> Hosts,
@@ -25,13 +30,29 @@ public sealed record ManagedCertificate(
     string AuthorityId = CertificateAuthorities.LetsEncryptStagingId,
     int ConsecutiveFailures = 0,
     DateTimeOffset? NextRetryAt = null,
-    ExpiryWarningLevel ExpiryWarningSent = ExpiryWarningLevel.None,
     Guid Id = default,
     CertificateSource Source = CertificateSource.Acme,
     string? Issuer = null,
-    int? ReminderDaysSent = null);
+    ReminderMode Reminders = ReminderMode.On,
+    DateTimeOffset? SnoozedUntil = null,
+    DateTimeOffset? LastRemindedAt = null,
+    bool UpcomingNoticeSent = false);
 
-/// <summary>Expiry notification levels, each sent at most once per certificate.</summary>
+public enum ReminderMode
+{
+    On = 0,
+
+    /// <summary>Not reminding until <see cref="ManagedCertificate.SnoozedUntil"/>, or until the certificate is replaced.</summary>
+    Snoozed = 1,
+
+    /// <summary>Not reminding until the certificate is replaced; the replacement is reminded about again.</summary>
+    OffUntilReplaced = 2,
+
+    /// <summary>Never reminding about this site's certificate, including its replacements.</summary>
+    Off = 3
+}
+
+/// <summary>How close a certificate is to expiry, relative to its lifetime; used by the health check.</summary>
 public enum ExpiryWarningLevel
 {
     None = 0,

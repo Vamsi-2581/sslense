@@ -142,11 +142,11 @@ SSLense.Cli adopt --site "Shop"                        # --thumbprint when the s
 
 Before anything changes, SSLense checks that the certificate covers the hosts, is currently valid, is meant for server authentication, matches the private key, and chains to a trusted root (missing intermediates are reported with a hint to use `--chain`). Replacing a certificate SSLense renews from Let's Encrypt needs `--force`. The previous certificate is left in the certificate store.
 
-Imported certificates get reminders through every notification channel at 30, 14, 7 and 1 days before expiry, and again when expired. `renew` skips them, and `status` shows them as renewed manually.
+Imported certificates are included in the daily reminder digest from 30 days before expiry (configurable) until they are replaced; see [Reminders](#reminders). `renew` skips them, and `status` shows them as renewed manually.
 
 ## Notifications
 
-SSLense sends renewal failures, expiry warnings, and (optionally) successful renewals. Every organisation's mail and chat setup differs, so channels can be combined freely; configure them under **Settings** in the GUI or with `SSLense.Cli notifications`. Passwords and URLs are encrypted with DPAPI, typed without echo, and never logged or displayed; only their host names are shown.
+SSLense sends renewal failures immediately, a daily reminder digest when a certificate needs attention, and (optionally) successful renewals. Every organisation's mail and chat setup differs, so channels can be combined freely; configure them under **Settings** in the GUI or with `SSLense.Cli notifications`. Passwords and URLs are encrypted with DPAPI, typed without echo, and never logged or displayed; only their host names are shown.
 
 | Channel | Setup | Notes |
 |---|---|---|
@@ -192,14 +192,24 @@ SSLense.Cli notifications heartbeat    # URL prompted
 
 The service pings the URL after every **healthy** hourly check. The pings stop when the server or service stops, or while renewals keep failing, so the monitoring service alerts you in either case, even with no other channel configured. Set the check to expect a ping every hour with a grace period of two to three hours.
 
+### Reminders
+
+Once a day (from 09:00 server time by default) the service sends one digest to every channel, but only when something needs attention:
+
+- a certificate from another provider within the reminder window (from 30 days before expiry by default), repeated daily or every few days until it is replaced;
+- an automatic renewal that is failing or overdue;
+- an expired certificate.
+
+Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. Renewal failures are still sent immediately as they happen. The settings and the per-certificate controls (snooze, off until replaced, off permanently) are described in [docs/design/expiry-reminders.md](docs/design/expiry-reminders.md).
+
 ### Event Log IDs
 
 | Event ID | Level | Meaning |
 |---|---|---|
 | 1000 | Information | Certificate renewed |
 | 1001 | Error | Renewal failed (sent on the third consecutive failure, then about daily) |
-| 1002 | Warning | Certificate expires soon |
-| 1003 | Error | Certificate expires very soon, or has expired |
+| 1002 | Warning or Information | Reminder digest: certificates need attention, or (Information) only upcoming automatic renewals or the weekly summary |
+| 1003 | Error | Reminder digest including a certificate that expires within 7 days or has expired |
 | 1900 | Information | Test notification |
 
 These IDs are stable across releases. Successful renewals are always recorded in the Event Log; `--notify-success on` also sends them to email and chat.
@@ -313,6 +323,7 @@ SSLense stores files under `C:\ProgramData\SSLense`:
 - `transactions\`: durable certificate-operation journals, normally removed automatically after commit or recovery
 - `challenges\`: records of HTTP-01 challenge files written into a site, so files left by an interrupted validation are removed at the next start (only once the process that wrote them has exited)
 - `service-heartbeat.json`: when the renewal service last started and completed a cycle, used by the health check
+- `reminder-state.json`: the day the last reminder digest and weekly summary were handled, so a restart never sends one twice
 - `logs\sslense-YYYYMMDD.log`: rolling logs retained for 30 days
 
 `config.json`, `managed-certificates.json`, `pending-requests.json`, and transaction journals carry a `schemaVersion`. Before SSLense first rewrites a file from an older schema, it saves the original as `<file>.v<old version>.bak` (for example `managed-certificates.json.v0.bak`). A file written by a newer SSLense version is never modified: SSLense stops with a message to install the newer version, so a downgrade cannot corrupt state.
