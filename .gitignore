@@ -48,3 +48,6 @@ appsettings.*.local.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# SSLense diagnostic bundles: redacted, but they still name this machine's sites and hosts
+sslense-diagnostics-*.zip

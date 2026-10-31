@@ -1,6 +1,6 @@
 # SSLense
 
-> SSLense is a free, open-source (Apache-2.0) Windows application that obtains Let’s Encrypt SSL certificates for IIS websites, binds them, verifies them over HTTPS and renews them automatically. It has a desktop GUI, a command line and a background renewal service.
+> SSLense is a free, open-source (Apache-2.0) Windows application that obtains Let’s Encrypt SSL certificates for IIS websites, binds them, verifies them over HTTPS and renews them automatically. It also installs and monitors certificates bought from other providers, and sends a daily expiry reminder digest. It has a desktop GUI, a command line and a background renewal service.
 
 ## Key pages
 - [Home](https://sslense.com/): what SSLense does, features, command-line examples and FAQ
@@ -14,6 +14,8 @@
 - Interfaces: desktop GUI, CLI (SSLense.Cli), and a Windows service that checks hourly
 - Renewal: follows ACME Renewal Information (ARI), with a lifetime-relative fallback
 - Notifications: email through any SMTP server or relay, Microsoft Teams, Slack, Discord, Telegram, ntfy, a heartbeat ping, and the Windows Event Log
+- Certificates from other providers (such as 123-reg, Sectigo, DigiCert): certificate requests with a non-exportable key, installing the issued certificate with HTTPS verification and rollback, PFX import, and adopting certificates already bound in IIS; SSLense reminds you to order their renewals
+- Reminders: one daily digest, only when a certificate needs attention, from a configurable number of days before expiry (default 30) until it is renewed; snooze or turn off per certificate; optional weekly summary
 - License: Apache License 2.0
-- Status: pre-release (0.9.x); releases are not yet code-signed
+- Status: pre-release (0.11.x); releases are not yet code-signed
 - Support: GitHub issues; security reports through GitHub private vulnerability reporting

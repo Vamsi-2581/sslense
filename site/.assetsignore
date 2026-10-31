@@ -1,0 +1,3 @@
+# Deployment configuration, not part of the website.
+wrangler.jsonc
+.assetsignore
