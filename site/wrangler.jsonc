@@ -1,0 +1,11 @@
+// Cloudflare Workers static site for sslense.com. Cloudflare's build uses "site" as the root directory, with no build
+// command and "npx wrangler deploy" as the deploy command; build watch paths limit builds to changes under site/.
+{
+  "name": "sslense",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".",
+    // Serves 404.html for unknown paths, as the static site expects.
+    "not_found_handling": "404-page"
+  }
+}
