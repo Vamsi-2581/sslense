@@ -56,16 +56,39 @@ public sealed class OutsideRenewalDetectorTests
         Assert.Empty(await Detect("NEW"));
     }
 
-    private Task<IReadOnlyList<string>> Detect(string boundThumbprint)
+    [Fact]
+    public async Task SiteWithAnOperationInProgress_IsLeftForTheNextCheck()
+    {
+        await _certificates.UpsertAsync(Imported());
+        Installed("NEW", OldExpiry.AddDays(365), hasKey: true, "shop.example.com", "www.shop.example.com");
+
+        Assert.Empty(await Detect("NEW", siteBusy: true));
+        Assert.Equal("OLD", Assert.Single(await _certificates.GetAllAsync()).Thumbprint);
+    }
+
+    [Fact]
+    public async Task HostStillServingTheOldCertificateOnAnotherAddress_IsNotTakenAsReplaced()
+    {
+        await _certificates.UpsertAsync(Imported());
+        Installed("NEW", OldExpiry.AddDays(365), hasKey: true, "shop.example.com", "www.shop.example.com");
+
+        Assert.Empty(await Detect("NEW", extraBinding: new IisBinding("https", "10.0.0.5", 443, "shop.example.com", "OLD", "My", true)));
+        Assert.Equal("OLD", Assert.Single(await _certificates.GetAllAsync()).Thumbprint);
+    }
+
+    private Task<IReadOnlyList<string>> Detect(string boundThumbprint, bool siteBusy = false, IisBinding? extraBinding = null)
     {
         var iis = new Mock<IIisService>();
-        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([
-            new IisSite(1, "Shop", "Started", null, [
-                new IisBinding("https", "*", 443, "shop.example.com", boundThumbprint, "My", true),
-                new IisBinding("https", "*", 443, "www.shop.example.com", boundThumbprint, "My", true)
-            ])
-        ]);
-        return new OutsideRenewalDetector(_certificates, iis.Object, _store.Object, _notifier.Object).DetectAsync();
+        IisBinding[] bindings =
+        [
+            new IisBinding("https", "*", 443, "shop.example.com", boundThumbprint, "My", true),
+            new IisBinding("https", "*", 443, "www.shop.example.com", boundThumbprint, "My", true),
+            .. extraBinding is null ? Array.Empty<IisBinding>() : [extraBinding]
+        ];
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([new IisSite(1, "Shop", "Started", null, bindings)]);
+        var siteLock = new Mock<ICertificateOperationLock>();
+        siteLock.Setup(value => value.TryAcquire("Shop")).Returns(siteBusy ? null : Mock.Of<IAsyncDisposable>());
+        return new OutsideRenewalDetector(_certificates, iis.Object, _store.Object, _notifier.Object, siteLock.Object).DetectAsync();
     }
 
     private void Installed(string thumbprint, DateTimeOffset notAfter, bool hasKey, params string[] dnsNames) =>

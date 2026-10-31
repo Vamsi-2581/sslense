@@ -68,7 +68,7 @@ internal sealed class ReminderService(
             results.AddRange((await outsideRenewals.DetectAsync(cancellationToken).ConfigureAwait(false))
                 .Select(change => new ReminderCheckResult(change)));
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             results.Add(new ReminderCheckResult($"Could not check for certificates replaced outside SSLense: {exception.Message}", Failed: true));
         }
@@ -102,7 +102,7 @@ internal sealed class ReminderService(
         {
             await notifier.NotifyAsync(digest.ToMessage(Environment.MachineName), cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             return [new ReminderCheckResult($"Could not send the reminder digest: {exception.Message} It will be retried at the next check.", Failed: true)];
         }
@@ -194,7 +194,7 @@ internal sealed class ReminderService(
                 scheduled[certificate.SiteName] = await renewalService.GetScheduledRenewalAsync(certificate, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
             {
                 // Without a schedule the certificate can still be reminded about by expiry and failures.
             }

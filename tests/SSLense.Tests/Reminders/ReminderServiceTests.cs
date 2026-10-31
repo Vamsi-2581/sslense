@@ -48,6 +48,22 @@ public sealed class ReminderServiceTests
     }
 
     [Fact]
+    public async Task CheckAsync_ScheduleLookupTimingOut_DoesNotStopTheDigest()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        await _certificates.UpsertAsync(Imported(daysLeft: 40) with { SiteName = "Api", Source = CertificateSource.Acme });
+        var renewal = new Mock<IRenewalService>();
+        // What HttpClient throws on a timeout, although nobody cancelled the check.
+        renewal.Setup(value => value.GetScheduledRenewalAsync(It.IsAny<ManagedCertificate>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout."));
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await CreateService(renewal.Object).CheckAsync();
+
+        Assert.Contains("1 certificate(s) need attention", Assert.Single(_sent).Subject, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SaveSettingsAsync_RejectsOutOfRangeValues()
     {
         var service = CreateService();
@@ -174,11 +190,11 @@ public sealed class ReminderServiceTests
         Assert.Null((await _state.GetAsync()).LastDigestDate);
     }
 
-    private ReminderService CreateService()
+    private ReminderService CreateService(IRenewalService? renewal = null)
     {
         var config = new Mock<IConfigStore>(MockBehavior.Strict);
         config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => new AppConfig { Reminders = _settings });
-        return new ReminderService(_certificates, config.Object, Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
+        return new ReminderService(_certificates, config.Object, renewal ?? Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
     }
 
     private ManagedCertificate Imported(int daysLeft) => new(
