@@ -20,6 +20,10 @@ public partial class LogsViewModel : ObservableObject, IDisposable
     private readonly AsyncRelayCommand _refreshCommand;
     private bool _selectingFile;
 
+    // True while the reader is on the current daily file (or none exists yet): a new day's file or the first file then
+    // takes over. An older file or a backup the reader picked stays selected.
+    private bool _followCurrent = true;
+
     [ObservableProperty] private string selectedLevel = "All";
     [ObservableProperty] private string search = string.Empty;
     [ObservableProperty] private LogFileOption? selectedFile;
@@ -56,7 +60,9 @@ public partial class LogsViewModel : ObservableObject, IDisposable
     /// <summary>Empties today's log after backing it up; only today's file is written to, so only it can be cleared.</summary>
     public IAsyncRelayCommand ClearLogCommand { get; }
 
-    public bool IsTodaySelected => SelectedFile is { File.IsBackup: false } && ReferenceEquals(SelectedFile, Files.FirstOrDefault());
+    public bool IsTodaySelected => SelectedFile is { File.IsBackup: false } && ReferenceEquals(SelectedFile, CurrentFile);
+
+    private LogFileOption? CurrentFile => Files.FirstOrDefault(option => !option.File.IsBackup);
 
     /// <summary>
     /// Set by the view while text is selected, so a live update does not replace the text and lose the selection.
@@ -80,17 +86,29 @@ public partial class LogsViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(IsTodaySelected));
         // A reload that restores the selection happens inside a refresh; it must not start a second one.
-        if (!_selectingFile) _ = _refreshCommand.ExecuteAsync(null);
+        if (_selectingFile) return;
+        _followCurrent = value is null || IsTodaySelected;
+        _ = _refreshCommand.ExecuteAsync(null);
     }
 
     partial void OnIsRefreshingChanged(bool value) => _refreshCommand.NotifyCanExecuteChanged();
 
     private async void OnTimerTick(object? sender, EventArgs e)
     {
-        // Only today's file changes; older files and backups are read once.
-        if (IsLive && !HoldUpdates && !IsRefreshing && IsTodaySelected)
+        if (!IsLive || HoldUpdates || IsRefreshing)
+        {
+            return;
+        }
+
+        // Following the current log: re-read it, which also moves to a new day's file. Otherwise only the file list is
+        // kept current; an older file or a backup does not change.
+        if (_followCurrent)
         {
             await _refreshCommand.ExecuteAsync(null);
+        }
+        else
+        {
+            ReloadFiles();
         }
     }
 
@@ -162,7 +180,9 @@ public partial class LogsViewModel : ObservableObject, IDisposable
                 Files.Add(new LogFileOption(file, label));
             }
 
-            SelectedFile = Files.FirstOrDefault(option => option.File.Path == selectedPath) ?? Files.FirstOrDefault();
+            SelectedFile = _followCurrent
+                ? CurrentFile ?? Files.FirstOrDefault()
+                : Files.FirstOrDefault(option => option.File.Path == selectedPath) ?? CurrentFile ?? Files.FirstOrDefault();
         }
         finally
         {

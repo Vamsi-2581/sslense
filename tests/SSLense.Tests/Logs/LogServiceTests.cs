@@ -90,7 +90,12 @@ public sealed class LogServiceTests
         var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
         fileSystem.Files[older] = "old\n";
         fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] Before clearing\n";
-        var service = new LogService(fileSystem);
+        var locked = 0;
+        var service = new LogService(fileSystem, operation =>
+        {
+            locked++;
+            return operation();
+        });
 
         var backup = await service.ClearCurrentAsync();
 
@@ -102,6 +107,19 @@ public sealed class LogServiceTests
         Assert.Equal([today, older, backup], files.Select(file => file.Path));
         Assert.True(files[2].IsBackup);
         Assert.Null(await service.ClearCurrentAsync());
+        Assert.Equal(2, locked);
+    }
+
+    [Fact]
+    public async Task ClearCurrentAsync_BackupFails_LeavesTheLogAsItWas()
+    {
+        var fileSystem = new InMemoryFileSystem { FailWritesUnder = LogService.BackupDirectory };
+        var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] Keep me\n";
+
+        await Assert.ThrowsAsync<IOException>(() => new LogService(fileSystem, operation => operation()).ClearCurrentAsync());
+
+        Assert.Contains("Keep me", fileSystem.Files[today], StringComparison.Ordinal);
     }
 
     [Fact]
