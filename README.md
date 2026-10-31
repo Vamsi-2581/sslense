@@ -436,11 +436,22 @@ The GUI's **Health** page runs the same checks and saves the bundle to your Desk
 
 ## Troubleshooting
 
+When certificate issuance fails, run the pre-flight checks for the selected IIS site and requested host names:
+
+```powershell
+SSLense.Cli preflight --site "My IIS Site" --hosts example.com,www.example.com
+```
+
+The command prints a `PASS` or `FAIL` line for each check. Fix the first failing condition below, then run pre-flight again.
+
+- **DNS does not point to this server:** the DNS or HTTP-01 check fails, or the hostname resolves to an unexpected address. From a machine outside the server's network, run `nslookup example.com` (or `Resolve-DnsName example.com` in PowerShell) and compare every A and AAAA record with the public endpoint that should reach IIS. Correct stale or missing records and allow their TTL to expire. If a tunnel provides the public endpoint, route the hostname to the IIS HTTP binding and preserve the original host header.
+- **Port 80 is blocked or unreachable:** HTTP-01 connectivity fails or times out although DNS is correct. From outside the server's network, check `Test-NetConnection example.com -Port 80` in PowerShell. Allow inbound TCP port 80 through the server firewall, cloud security group, router/NAT, and any network firewall; keep it reachable for the full validation.
+- **The IIS site has no matching HTTP binding:** the selected site cannot serve the requested host on port 80, or the HTTP-01 probe reaches a different site. In IIS Manager, open the selected site's **Bindings** and add an **http** binding on port **80** for each requested host name. Remove or correct any conflicting binding on another site, then confirm that the public hostname routes to this site.
+- **A proxy or CDN intercepts the challenge:** DNS and the IIS binding look correct, but HTTP-01 returns a 404, redirect, authentication page, or unrelated response. Configure the proxy, CDN, or tunnel to forward `/.well-known/acme-challenge/` to the same IIS site over HTTP, preserve the requested host header, and bypass authentication, rewriting, and caching for that path. Confirm the route from outside the server before retrying issuance.
+- **HTTP-01 returns 404 or unexpected content:** check the IIS binding, tunnel host header, authentication, URL Rewrite, MVC routing, proxies, and cached responses for `/.well-known/acme-challenge/<token>`.
+- **ACME validation times out:** confirm public DNS and tunnel routing, and that inbound HTTP remains available throughout validation.
 - **Access denied:** run PowerShell as Administrator.
 - **IIS sites cannot be read:** install IIS Management Scripts and Tools.
-- **HTTP-01 returns 404:** confirm the hostname's port 80 IIS binding, tunnel host header, and that `/.well-known/acme-challenge/<token>` reaches the same site.
-- **HTTP-01 returns unexpected content:** check authentication, URL Rewrite, MVC routing, proxies, and cached responses for the challenge path.
-- **ACME validation times out:** confirm public DNS/tunnel routing and that inbound HTTP remains available throughout validation.
 - **SMTP test fails:** verify the port, TLS mode, credentials, outbound firewall policy, and provider-specific authentication requirements.
 - **Webhook test fails:** verify that the receiving endpoint accepts an HTTP POST containing `kind`, `subject`, `body`, and `occurredAtUtc` JSON fields.
 
