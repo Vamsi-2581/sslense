@@ -25,7 +25,7 @@ public sealed class HealthCheckServiceTests
                      "Configuration", "Managed certificates", "Interrupted operations", "Renewal service",
                      "Service heartbeat", "IIS", "Certificate installed: My Site", "HTTPS bindings: My Site",
                      "Expiry: My Site", "Renewal history: My Site", "DNS: example.com",
-                     "HTTP reachability: example.com (My Site)", "Let's Encrypt staging", "Notifications"
+                     "HTTP reachability: example.com (My Site)", "Let's Encrypt staging", "Notifications", "Reminders"
                  })
         {
             Assert.Equal(HealthStatus.Pass, Assert.Single(results, result => result.Name == name).Status);
@@ -87,7 +87,7 @@ public sealed class HealthCheckServiceTests
 
         Assert.Equal(
             ["Data folder permissions", "Configuration", "Managed certificates", "Interrupted operations",
-             "Renewal service", "Service heartbeat", "Notifications"],
+             "Renewal service", "Service heartbeat", "Notifications", "Reminders"],
             results.Select(result => result.Name));
         iis.VerifyNoOtherCalls();
         resolver.VerifyNoOtherCalls();
@@ -104,6 +104,16 @@ public sealed class HealthCheckServiceTests
 
         AssertStatus(results, "DNS: example.com", HealthStatus.Fail, "DNS record");
         AssertStatus(results, "Let's Encrypt staging", HealthStatus.Fail, "status");
+    }
+
+    [Fact]
+    public async Task RunQuickAsync_MutedCertificateExpiringThisWeek_IsAWarning()
+    {
+        var muted = Certificate() with { NotAfter = DateTimeOffset.UtcNow.AddDays(3), Reminders = ReminderMode.Off };
+
+        var results = await CreateService(certificate: muted).RunQuickAsync();
+
+        AssertStatus(results, "Reminders", HealthStatus.Warning, "--mode on");
     }
 
     private static void AssertStatus(IReadOnlyList<HealthCheckResult> results, string name, HealthStatus status, string fixContains)

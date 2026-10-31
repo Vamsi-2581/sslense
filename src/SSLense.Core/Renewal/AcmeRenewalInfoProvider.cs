@@ -111,6 +111,12 @@ internal sealed class AcmeRenewalInfoProvider(HttpClient httpClient, ICertificat
         {
             throw;
         }
+        catch (OperationCanceledException)
+        {
+            // HttpClient reports a timeout as a cancellation nobody asked for. Like any other unavailable window, it
+            // means the fallback schedule; letting it escape would stop the renewal check for every certificate.
+            return null;
+        }
         catch (HttpRequestException)
         {
             return null;

@@ -127,29 +127,69 @@ public sealed class JsonManagedCertificateStoreTests
     }
 
     [Fact]
-    public async Task RecordExpiryWarningAsync_IgnoresReplacedCertificatesAndLowerLevels()
+    public async Task RecordRemindersAsync_IgnoresCertificatesReplacedSinceTheDigestWasBuilt()
     {
         var store = new JsonManagedCertificateStore(new InMemoryFileSystem(), StatePath, LockPath);
         await store.UpsertAsync(CreateCertificate());
+        var sentAt = new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
 
-        await store.RecordExpiryWarningAsync("My Site", "AABBCC", ExpiryWarningLevel.Critical);
-        await store.RecordExpiryWarningAsync("My Site", "AABBCC", ExpiryWarningLevel.Warning);
-        await store.RecordExpiryWarningAsync("My Site", "REPLACED", ExpiryWarningLevel.Expired);
+        await store.RecordRemindersAsync([new ReminderRecord("My Site", "AABBCC", Reminded: false, NoticeSent: true)], sentAt);
+        await store.RecordRemindersAsync([new ReminderRecord("My Site", "REPLACED", Reminded: true, NoticeSent: false)], sentAt.AddDays(1));
 
-        Assert.Equal(ExpiryWarningLevel.Critical, Assert.Single(await store.GetAllAsync()).ExpiryWarningSent);
+        var record = Assert.Single(await store.GetAllAsync());
+        Assert.True(record.UpcomingNoticeSent);
+        Assert.Null(record.LastRemindedAt);
+    }
+
+    [Theory]
+    [InlineData(ReminderMode.Snoozed, ReminderMode.On)]
+    [InlineData(ReminderMode.OffUntilReplaced, ReminderMode.On)]
+    [InlineData(ReminderMode.Off, ReminderMode.Off)]
+    public async Task UpsertAsync_NewCertificate_ResetsRemindersUnlessOffPermanently(ReminderMode before, ReminderMode after)
+    {
+        var store = new JsonManagedCertificateStore(new InMemoryFileSystem(), StatePath, LockPath);
+        await store.UpsertAsync(CreateCertificate() with
+        {
+            Reminders = before,
+            SnoozedUntil = DateTimeOffset.UtcNow.AddDays(5),
+            LastRemindedAt = DateTimeOffset.UtcNow,
+            UpcomingNoticeSent = true
+        });
+
+        // A renewal or import builds a fresh record; the store carries the reminder state across.
+        await store.UpsertAsync(CreateCertificate());
+        Assert.Equal(before, Assert.Single(await store.GetAllAsync()).Reminders);
+
+        await store.UpsertAsync(CreateCertificate() with { Thumbprint = "NEW" });
+        var replaced = Assert.Single(await store.GetAllAsync());
+        Assert.Equal(after, replaced.Reminders);
+        Assert.Null(replaced.SnoozedUntil);
+        Assert.Null(replaced.LastRemindedAt);
+        Assert.False(replaced.UpcomingNoticeSent);
     }
 
     [Fact]
-    public async Task RecordImportedReminderAsync_OnlyMovesTowardsExpiry()
+    public async Task SchemaTwoFile_DropsTheOldReminderMarkersAndStartsWithRemindersOn()
     {
-        var store = new JsonManagedCertificateStore(new InMemoryFileSystem(), StatePath, LockPath);
-        await store.UpsertAsync(CreateCertificate() with { Source = CertificateSource.Imported });
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.Files[StatePath] = """
+            {
+              "schemaVersion": 2,
+              "certificates": [
+                { "siteName": "My Site", "hosts": [ "example.com" ], "email": "", "thumbprint": "AABBCC",
+                  "notBefore": "2026-09-01T00:00:00+00:00", "notAfter": "2026-11-30T00:00:00+00:00",
+                  "source": 1, "expiryWarningSent": 1, "reminderDaysSent": 14 }
+              ]
+            }
+            """;
+        var store = new JsonManagedCertificateStore(fileSystem, StatePath, LockPath);
 
-        await store.RecordImportedReminderAsync("My Site", "AABBCC", 14);
-        await store.RecordImportedReminderAsync("My Site", "AABBCC", 30);
-        await store.RecordImportedReminderAsync("My Site", "REPLACED", 1);
+        Assert.Equal(ReminderMode.On, Assert.Single(await store.GetAllAsync()).Reminders);
+        await store.RecordRemindersAsync([new ReminderRecord("My Site", "AABBCC", Reminded: true, NoticeSent: false)], DateTimeOffset.UtcNow);
 
-        Assert.Equal(14, Assert.Single(await store.GetAllAsync()).ReminderDaysSent);
+        Assert.True(fileSystem.Files.ContainsKey($"{StatePath}.v2.bak"));
+        Assert.DoesNotContain("reminderDaysSent", fileSystem.Files[StatePath], StringComparison.Ordinal);
+        Assert.DoesNotContain("expiryWarningSent", fileSystem.Files[StatePath], StringComparison.Ordinal);
     }
 
     private const string LegacyJson = """

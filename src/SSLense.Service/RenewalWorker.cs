@@ -3,13 +3,14 @@ using SSLense.Core;
 using SSLense.Core.Certificates;
 using SSLense.Core.Diagnostics;
 using SSLense.Core.Notifications;
+using SSLense.Core.Reminders;
 using SSLense.Core.Renewal;
 
 namespace SSLense.Service;
 
 internal sealed class RenewalWorker(
     IRenewalService renewalService,
-    IExpiryMonitor expiryMonitor,
+    IReminderService reminderService,
     ICertificateRecoveryService recoveryService,
     IServiceHeartbeatStore heartbeatStore,
     INotifier notifier,
@@ -43,15 +44,15 @@ internal sealed class RenewalWorker(
         await SaveHeartbeatAsync(_heartbeat with { LastCycleStartedAt = DateTimeOffset.UtcNow }, cancellationToken)
             .ConfigureAwait(false);
 
-        // Expiry monitoring runs first and separately so it still alerts when renewal itself is broken.
-        var expiryProblem = await CheckExpiryAsync(cancellationToken).ConfigureAwait(false);
+        // Reminders run first and separately so they still go out when renewal itself is broken.
+        var reminderProblem = await CheckRemindersAsync(cancellationToken).ConfigureAwait(false);
         var renewalProblem = await RunRenewalAsync(cancellationToken).ConfigureAwait(false);
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        var problem = renewalProblem ?? expiryProblem;
+        var problem = renewalProblem ?? reminderProblem;
         await SaveHeartbeatAsync(
                 _heartbeat with
                 {
@@ -128,13 +129,20 @@ internal sealed class RenewalWorker(
     }
 
     /// <returns>A problem description, or null when the check ran.</returns>
-    private async Task<string?> CheckExpiryAsync(CancellationToken cancellationToken)
+    private async Task<string?> CheckRemindersAsync(CancellationToken cancellationToken)
     {
         try
         {
-            foreach (var message in await expiryMonitor.CheckAsync(cancellationToken).ConfigureAwait(false))
+            foreach (var result in await reminderService.CheckAsync(cancellationToken).ConfigureAwait(false))
             {
-                logger.LogWarning("{ExpiryMessage}", message);
+                if (result.Failed)
+                {
+                    logger.LogWarning("{ReminderMessage}", result.Message);
+                }
+                else
+                {
+                    logger.LogInformation("{ReminderMessage}", result.Message);
+                }
             }
 
             return null;
@@ -145,8 +153,8 @@ internal sealed class RenewalWorker(
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Certificate expiry check failed");
-            return $"Expiry check failed: {exception.Message}";
+            logger.LogError(exception, "Certificate reminder check failed");
+            return $"Reminder check failed: {exception.Message}";
         }
     }
 

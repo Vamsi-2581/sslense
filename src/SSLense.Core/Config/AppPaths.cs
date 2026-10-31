@@ -44,5 +44,7 @@ public static class AppPaths
 
     public static string PendingRequestsFile => Path.Combine(DataDirectory, "pending-requests.json");
 
+    public static string ReminderStateFile => Path.Combine(DataDirectory, "reminder-state.json");
+
     public static string PendingRequestsLockFile => Path.Combine(DataDirectory, "pending-requests.lock");
 }

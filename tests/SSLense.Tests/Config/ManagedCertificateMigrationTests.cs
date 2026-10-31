@@ -54,11 +54,11 @@ public sealed class ManagedCertificateMigrationTests
         fileSystem.Files[StatePath] = SchemaOneState;
         var store = new JsonManagedCertificateStore(fileSystem, StatePath, LockPath);
 
-        await store.RecordExpiryWarningAsync("Prod Site", "AA", ExpiryWarningLevel.Warning);
+        await store.RecordRemindersAsync([new ReminderRecord("Prod Site", "AA", Reminded: true, NoticeSent: false)], DateTimeOffset.UtcNow);
 
         Assert.Equal(SchemaOneState, fileSystem.Files[$"{StatePath}.v1.bak"]);
         var rewritten = fileSystem.Files[StatePath];
-        Assert.Contains("\"schemaVersion\": 2", rewritten, StringComparison.Ordinal);
+        Assert.Contains($"\"schemaVersion\": {StateSchema.ManagedCertificates}", rewritten, StringComparison.Ordinal);
         Assert.Contains("\"authorityId\": \"letsencrypt\"", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("\"environment\"", rewritten, StringComparison.Ordinal);
         Assert.Equal(CertificateAuthorities.LetsEncryptId, (await store.GetAllAsync()).Single(record => record.SiteName == "Prod Site").AuthorityId);

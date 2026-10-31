@@ -49,12 +49,14 @@ public sealed class JsonManagedCertificateStore : IManagedCertificateStore
                     var id = certificate.Id != Guid.Empty
                         ? certificate.Id
                         : existing >= 0 ? records[existing].Id : Guid.NewGuid();
+                    var record = certificate with { Id = id };
                     if (existing >= 0)
                     {
+                        record = WithReminderState(record, records[existing]);
                         records.RemoveAt(existing);
                     }
 
-                    records.Add(certificate with { Id = id });
+                    records.Add(record);
                     return true;
                 },
                 cancellationToken)
@@ -93,47 +95,89 @@ public sealed class JsonManagedCertificateStore : IManagedCertificateStore
         return updated;
     }
 
-    public Task RecordExpiryWarningAsync(
-        string siteName,
-        string thumbprint,
-        ExpiryWarningLevel level,
+    public Task RecordRemindersAsync(
+        IReadOnlyList<ReminderRecord> sent,
+        DateTimeOffset sentAt,
         CancellationToken cancellationToken = default) =>
         UpdateAsync(
             records =>
             {
-                var index = records.FindIndex(value => IsSite(value, siteName));
-                if (index < 0 ||
-                    !string.Equals(records[index].Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase) ||
-                    records[index].ExpiryWarningSent >= level)
+                var changed = false;
+                foreach (var entry in sent)
                 {
-                    return false;
+                    var index = records.FindIndex(value => IsSite(value, entry.SiteName));
+                    if (index < 0 ||
+                        !string.Equals(records[index].Thumbprint, entry.Thumbprint, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    records[index] = records[index] with
+                    {
+                        LastRemindedAt = entry.Reminded ? sentAt : records[index].LastRemindedAt,
+                        UpcomingNoticeSent = records[index].UpcomingNoticeSent || entry.NoticeSent
+                    };
+                    changed = true;
                 }
 
-                records[index] = records[index] with { ExpiryWarningSent = level };
-                return true;
+                return changed;
             },
             cancellationToken);
 
-    public Task RecordImportedReminderAsync(
+    public async Task<bool> SetReminderModeAsync(
         string siteName,
-        string thumbprint,
-        int days,
-        CancellationToken cancellationToken = default) =>
-        UpdateAsync(
-            records =>
-            {
-                var index = records.FindIndex(value => IsSite(value, siteName));
-                if (index < 0 ||
-                    !string.Equals(records[index].Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase) ||
-                    records[index].ReminderDaysSent <= days)
+        ReminderMode mode,
+        DateTimeOffset? snoozedUntil,
+        CancellationToken cancellationToken = default)
+    {
+        var found = false;
+        await UpdateAsync(
+                records =>
                 {
-                    return false;
-                }
+                    var index = records.FindIndex(value => IsSite(value, siteName));
+                    if (index < 0)
+                    {
+                        return false;
+                    }
 
-                records[index] = records[index] with { ReminderDaysSent = days };
-                return true;
-            },
-            cancellationToken);
+                    found = true;
+                    records[index] = records[index] with
+                    {
+                        Reminders = mode,
+                        SnoozedUntil = mode == ReminderMode.Snoozed ? snoozedUntil : null
+                    };
+                    return true;
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        return found;
+    }
+
+    /// <summary>
+    /// Reminder state belongs to the site's record: an install or renewal keeps it, and a new certificate starts its
+    /// reminders afresh, except when the administrator turned them off permanently.
+    /// </summary>
+    private static ManagedCertificate WithReminderState(ManagedCertificate incoming, ManagedCertificate existing)
+    {
+        if (string.Equals(incoming.Thumbprint, existing.Thumbprint, StringComparison.OrdinalIgnoreCase))
+        {
+            return incoming with
+            {
+                Reminders = existing.Reminders,
+                SnoozedUntil = existing.SnoozedUntil,
+                LastRemindedAt = existing.LastRemindedAt,
+                UpcomingNoticeSent = existing.UpcomingNoticeSent
+            };
+        }
+
+        return incoming with
+        {
+            Reminders = existing.Reminders == ReminderMode.Off ? ReminderMode.Off : ReminderMode.On,
+            SnoozedUntil = null,
+            LastRemindedAt = null,
+            UpcomingNoticeSent = false
+        };
+    }
 
     public async Task RemoveAsync(string siteName, CancellationToken cancellationToken = default)
     {

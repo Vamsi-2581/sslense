@@ -177,7 +177,37 @@ internal sealed class HealthCheckService(
         }
 
         await Check("Notifications", () => Task.FromResult(CheckNotifications(config))).ConfigureAwait(false);
+        await Check("Reminders", () => Task.FromResult(CheckReminders(config, certificates))).ConfigureAwait(false);
         return results;
+    }
+
+    /// <summary>
+    /// Summarises the reminder settings, and warns about a certificate whose reminders are off or snoozed while it
+    /// expires within a week: the one case a muted reminder would have mattered.
+    /// </summary>
+    private static HealthCheckResult CheckReminders(AppConfig? config, IReadOnlyList<ManagedCertificate> certificates)
+    {
+        const string name = "Reminders";
+        if (config is null)
+        {
+            return new HealthCheckResult(name, HealthStatus.Warning, "Configuration could not be read.");
+        }
+
+        var settings = config.Reminders;
+        var now = DateTimeOffset.UtcNow;
+        var summary = $"Daily digest from {settings.SendAtHour:00}:00, starting {settings.StartDays} days before expiry, " +
+                      $"repeating every {settings.RepeatDays} day(s).";
+        var mutedSoon = certificates
+            .Where(certificate => Reminders.ReminderDigestBuilder.IsMuted(certificate, now) &&
+                                  certificate.NotAfter - now <= TimeSpan.FromDays(Reminders.ReminderDigestBuilder.DailyFinalDays))
+            .ToArray();
+        return mutedSoon.Length == 0
+            ? Pass(name, summary)
+            : new HealthCheckResult(
+                name,
+                HealthStatus.Warning,
+                $"{summary} Reminders are off or snoozed for {string.Join(", ", mutedSoon.Select(certificate => $"'{certificate.SiteName}' (expires {certificate.NotAfter:yyyy-MM-dd})"))}.",
+                "Turn its reminders back on in Certificate Details, or with 'SSLense.Cli reminders site --site <site> --mode on'.");
     }
 
     private static HealthCheckResult CheckElevation() =>
@@ -340,7 +370,7 @@ internal sealed class HealthCheckService(
 
         var environment = CertificateAuthorities.Label(certificate.AuthorityId);
         var expires = $"{environment} certificate expires {certificate.NotAfter:yyyy-MM-dd HH:mm} UTC";
-        return ExpiryMonitor.GetLevel(certificate, DateTimeOffset.UtcNow) switch
+        return ExpiryLevels.GetLevel(certificate, DateTimeOffset.UtcNow) switch
         {
             ExpiryWarningLevel.None => Pass(name, $"{expires} ({days} days left)."),
             ExpiryWarningLevel.Warning => new HealthCheckResult(

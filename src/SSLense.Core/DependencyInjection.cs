@@ -8,6 +8,7 @@ using SSLense.Core.WindowsServices;
 using SSLense.Core.Notifications;
 using SSLense.Core.Logs;
 using SSLense.Core.Diagnostics;
+using SSLense.Core.Reminders;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace SSLense.Core;
@@ -37,7 +38,9 @@ public static class DependencyInjection
         services.AddSingleton<ITlsBindingProbe, TlsBindingProbe>();
         services.AddTransient<IIisService, IisService>();
         services.AddTransient<IRenewalService, RenewalService>();
-        services.AddTransient<IExpiryMonitor, ExpiryMonitor>();
+        services.AddTransient<IReminderService, ReminderService>();
+        services.AddTransient<IOutsideRenewalDetector, OutsideRenewalDetector>();
+        services.AddSingleton<IReminderStateStore, JsonReminderStateStore>();
         services.AddSingleton<HttpClient>();
         services.AddSingleton<IRenewalInfoProvider, AcmeRenewalInfoProvider>();
         services.AddTransient<IWindowsServiceManager, WindowsServiceManager>();

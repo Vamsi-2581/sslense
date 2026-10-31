@@ -21,4 +21,7 @@ public sealed record ManagedCertificateStatus(
     string AuthorityName = "Let's Encrypt staging",
     bool IsTestAuthority = true,
     CertificateSource Source = CertificateSource.Acme,
-    string? Issuer = null);
+    string? Issuer = null,
+    ReminderMode Reminders = ReminderMode.On,
+    DateTimeOffset? SnoozedUntil = null,
+    DateTimeOffset? LastRemindedAt = null);

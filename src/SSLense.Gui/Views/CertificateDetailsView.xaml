@@ -17,7 +17,7 @@
   </Border>
   <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.15*"/></Grid.ColumnDefinitions>
    <Border Style="{StaticResource Card}" Margin="0,0,14,0">
-    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Grid.ColumnSpan="2" Text="Certificate information" Style="{StaticResource SectionTitle}" Margin="0,0,0,16"/>
      <TextBlock Grid.Row="1" Text="Host names" Style="{StaticResource CaptionText}"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Hosts}" TextWrapping="Wrap" FontWeight="SemiBold"/>
      <TextBlock Grid.Row="2" Text="Source" Style="{StaticResource CaptionText}" Margin="0,14,0,0"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Environment}" TextWrapping="Wrap" Margin="0,14,0,0" FontWeight="SemiBold"/>
@@ -26,6 +26,15 @@
      <TextBlock Grid.Row="5" Text="Issued" Style="{StaticResource CaptionText}" Margin="0,14,0,0"/><TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding IssueDate}" Margin="0,14,0,0"/>
      <TextBlock Grid.Row="6" Text="Expires" Style="{StaticResource CaptionText}" Margin="0,14,0,0"/><TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding ExpiryDate}" Margin="0,14,0,0" FontWeight="SemiBold"/>
      <TextBlock Grid.Row="7" Text="Bound sites" Style="{StaticResource CaptionText}" Margin="0,14,0,0"/><TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding BoundSites}" Margin="0,14,0,0"/>
+     <TextBlock Grid.Row="8" Text="Reminders" Style="{StaticResource CaptionText}" Margin="0,14,0,0"/>
+     <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,14,0,0">
+      <TextBlock Text="{Binding ReminderState}" TextWrapping="Wrap" FontWeight="SemiBold"/>
+      <DockPanel Margin="0,8,0,0">
+       <Button DockPanel.Dock="Right" Content="Apply" Command="{Binding ApplyReminderCommand}" Margin="8,0,0,0"/>
+       <ComboBox ItemsSource="{Binding ReminderChoices}" SelectedItem="{Binding SelectedReminderChoice}" AutomationProperties.Name="Reminders for this certificate"/>
+      </DockPanel>
+     </StackPanel>
+     <TextBlock Grid.Row="9" Text="Last reminded" Style="{StaticResource CaptionText}" Margin="0,14,0,0"/><TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding LastReminded}" Margin="0,14,0,0"/>
     </Grid>
    </Border>
    <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0" ClipToBounds="True"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><TextBlock Text="Recent activity" Style="{StaticResource SectionTitle}" Margin="18,15"/><ListBox Grid.Row="1" ItemsSource="{Binding RecentLogLines}" Style="{StaticResource ConsoleList}"/></Grid></Border>

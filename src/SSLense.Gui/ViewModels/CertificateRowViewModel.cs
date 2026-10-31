@@ -14,6 +14,14 @@ public sealed class CertificateRowViewModel
         DaysRemaining = status.DaysRemaining;
         Thumbprint = status.Thumbprint;
         IsImported = status.Source == CertificateSource.Imported;
+        Reminders = status.Reminders switch
+        {
+            ReminderMode.Snoozed when status.SnoozedUntil is { } until && until > DateTimeOffset.UtcNow => $"Snoozed to {until.ToLocalTime():dd MMM}",
+            ReminderMode.Snoozed => "On",
+            ReminderMode.OffUntilReplaced => "Off until replaced",
+            ReminderMode.Off => "Off",
+            _ => "On"
+        };
         Environment = IsImported
             ? "Imported"
             : CertificateAuthorities.IsBuiltIn(status.AuthorityId)
@@ -56,6 +64,8 @@ public sealed class CertificateRowViewModel
     public string Environment { get; }
 
     public bool IsImported { get; }
+
+    public string Reminders { get; }
 
     public string Status { get; }
 

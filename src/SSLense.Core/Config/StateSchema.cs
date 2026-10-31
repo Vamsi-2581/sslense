@@ -9,16 +9,17 @@ internal static class StateSchema
     /// <summary>
     /// Version 0 was a bare JSON array; version 1 wraps it with a version and adds record IDs. Version 2 replaces
     /// the Let's Encrypt environment with a certificate authority ID and adds the certificate source
-    /// (see <see cref="ManagedCertificateMigrations"/>).
+    /// (see <see cref="ManagedCertificateMigrations"/>). Version 3 replaces the fixed reminder and expiry-warning markers
+    /// with the per-certificate reminder setting; the new fields default and the old ones are dropped.
     /// </summary>
-    public const int ManagedCertificates = 2;
+    public const int ManagedCertificates = 3;
 
     /// <summary>
     /// Version 0 had no version field. Version 2 replaced the single SMTP server and generic webhook with
     /// email, chat channels, a heartbeat, and the Event Log (see <see cref="ConfigMigrations"/>). Version 3 adds
-    /// configured certificate authorities.
+    /// configured certificate authorities. Version 4 adds reminder settings, which default when absent.
     /// </summary>
-    public const int Config = 3;
+    public const int Config = 4;
 
     /// <summary>Version 2 stores the certificate snapshot in managed-certificate schema 2.</summary>
     public const int Transactions = 2;
@@ -26,6 +27,8 @@ internal static class StateSchema
     public const int ServiceHeartbeat = 1;
 
     public const int PendingRequests = 1;
+
+    public const int ReminderState = 1;
 
     public static void EnsureSupported(int version, int supportedVersion, string path)
     {

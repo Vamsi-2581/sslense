@@ -16,9 +16,26 @@
 
    <GroupBox Header="General" Margin="0,10,0,14"><StackPanel>
     <TextBlock Text="DEFAULT ACME EMAIL" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding DefaultEmail}" Margin="0,0,0,14"/>
-    <TextBlock Text="RENEWAL THRESHOLD (DAYS)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding RenewalThresholdDays}" Margin="0,0,0,14" Width="120" HorizontalAlignment="Left"/>
-    <TextBlock Text="Staging is the safe default. Production must be selected and explicitly acknowledged for each new issuance." Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+    <TextBlock Text="Staging is the safe default. Production must be selected and explicitly acknowledged for each new issuance. Let's Encrypt certificates renew when the CA recommends; reminders are set below." Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
     <Button Content="Save general settings" Command="{Binding SaveGeneralCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+   </StackPanel></GroupBox>
+
+   <GroupBox Header="Reminders" Margin="0,0,0,14"><StackPanel>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
+               Text="One digest a day to every notification channel, only when a certificate needs attention: one from another provider that must be ordered again, an automatic renewal that is failing or late, or an expired certificate. It repeats until the certificate is renewed. Turn reminders off or snooze them per certificate on Certificate Details."/>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <StackPanel Margin="0,0,24,0"><TextBlock Text="START REMINDING (DAYS BEFORE EXPIRY)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding ReminderStartDays}" Width="120" HorizontalAlignment="Left" AutomationProperties.Name="Start reminding, days before expiry"/></StackPanel>
+     <StackPanel Grid.Column="1" Margin="0,0,24,0"><TextBlock Text="REPEAT EVERY (DAYS)" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding ReminderRepeatDays}" Width="120" HorizontalAlignment="Left" AutomationProperties.Name="Repeat every, days"/></StackPanel>
+     <StackPanel Grid.Column="2" Margin="0,0,24,0"><TextBlock Text="SEND AT (SERVER TIME)" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Hours}" SelectedItem="{Binding ReminderSendAt}" Width="120" AutomationProperties.Name="Send at"/></StackPanel>
+     <StackPanel Grid.Column="3"><TextBlock Text="WEEKLY SUMMARY" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding WeeklySummaryOptions}" SelectedItem="{Binding WeeklySummary}" Width="160" HorizontalAlignment="Left" AutomationProperties.Name="Weekly summary day"/></StackPanel>
+    </Grid>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"
+               Text="Reminders are daily in the last 7 days whatever the repeat says. The weekly summary is sent on that day even when all is well, so silence means something is wrong."/>
+    <CheckBox Content="Tell me once when a Let's Encrypt certificate is about to renew automatically" IsChecked="{Binding UpcomingRenewalNotices}" Margin="0,12,0,0"/>
+    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+     <Button Content="Save reminders" Command="{Binding SaveRemindersCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+     <Button Content="Send sample digest" Command="{Binding SendSampleReminderCommand}" ToolTip="Sends today's digest now, marked as a sample. Nothing is recorded, so real reminders are unchanged."/>
+    </StackPanel>
    </StackPanel></GroupBox>
 
    <GroupBox Header="Notifications" Margin="0,0,0,14"><StackPanel>
