@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using SSLense.Core.Config;
 using SSLense.Core.Notifications;
+using SSLense.Core.Reminders;
 using SSLense.Core.WindowsServices;
 
 namespace SSLense.Gui.ViewModels;
@@ -15,6 +16,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly INotificationSettingsService _notificationSettingsService;
     private readonly INotifier _notifier;
     private readonly IWindowsServiceManager _serviceManager;
+    private readonly IReminderService _reminderService;
     private readonly ILogger<SettingsViewModel> _logger;
 
     [ObservableProperty] private string defaultEmail = string.Empty;
@@ -41,6 +43,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool eventLogEnabled = true;
     [ObservableProperty] private bool notifyOnSuccess;
 
+    [ObservableProperty] private int reminderStartDays = 30;
+    [ObservableProperty] private int reminderRepeatDays = 1;
+    [ObservableProperty] private HourOption? reminderSendAt;
+    [ObservableProperty] private bool upcomingRenewalNotices = true;
+    [ObservableProperty] private string weeklySummary = "Off";
+
     [ObservableProperty] private string serviceStatus = "Checking...";
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private string? errorMessage;
@@ -51,8 +59,10 @@ public partial class SettingsViewModel : ObservableObject
         INotificationSettingsService notificationSettingsService,
         INotifier notifier,
         IWindowsServiceManager serviceManager,
+        IReminderService reminderService,
         ILogger<SettingsViewModel> logger)
     {
+        _reminderService = reminderService;
         _settingsService = settingsService;
         _notificationSettingsService = notificationSettingsService;
         _notifier = notifier;
@@ -75,7 +85,14 @@ public partial class SettingsViewModel : ObservableObject
         StartServiceCommand = Command(StartServiceAsync);
         StopServiceCommand = Command(StopServiceAsync);
         RestartServiceCommand = Command(RestartServiceAsync);
+        SaveRemindersCommand = Command(SaveRemindersAsync);
+        SendSampleReminderCommand = Command(SendSampleReminderAsync);
     }
+
+    public IReadOnlyList<HourOption> Hours { get; } = Enumerable.Range(0, 24).Select(hour => new HourOption(hour)).ToArray();
+    public IReadOnlyList<string> WeeklySummaryOptions { get; } = ["Off", .. Enum.GetNames<DayOfWeek>()];
+    public IAsyncRelayCommand SaveRemindersCommand { get; }
+    public IAsyncRelayCommand SendSampleReminderCommand { get; }
 
     public IReadOnlyList<EmailPreset> EmailPresets => EmailPreset.All;
     public IReadOnlyList<SmtpSecurity> SecurityOptions { get; } = Enum.GetValues<SmtpSecurity>();
@@ -106,6 +123,12 @@ public partial class SettingsViewModel : ObservableObject
             var config = await _settingsService.GetAsync(token).ConfigureAwait(true);
             DefaultEmail = config.DefaultEmail ?? string.Empty;
             RenewalThresholdDays = config.RenewalThresholdDays;
+            var reminders = config.Reminders;
+            ReminderStartDays = reminders.StartDays;
+            ReminderRepeatDays = reminders.RepeatDays;
+            ReminderSendAt = Hours[reminders.SendAtHour];
+            UpcomingRenewalNotices = reminders.UpcomingRenewalNotices;
+            WeeklySummary = reminders.WeeklySummaryDay?.ToString() ?? "Off";
             await LoadNotificationsAsync(token).ConfigureAwait(true);
             await RefreshServiceCoreAsync(token).ConfigureAwait(true);
         }, CancellationToken.None);
@@ -207,6 +230,30 @@ public partial class SettingsViewModel : ObservableObject
               string.Join(" ", results.Where(result => !result.Succeeded).Select(result => $"{result.Channel}: {result.Message}"));
     }, token);
 
+    private Task SaveRemindersAsync(CancellationToken token) => RunAsync(async ct =>
+    {
+        await _reminderService.SaveSettingsAsync(
+                new ReminderConfig
+                {
+                    StartDays = ReminderStartDays,
+                    RepeatDays = ReminderRepeatDays,
+                    SendAtHour = ReminderSendAt?.Hour ?? 9,
+                    UpcomingRenewalNotices = UpcomingRenewalNotices,
+                    WeeklySummaryDay = Enum.TryParse<DayOfWeek>(WeeklySummary, out var day) ? day : null
+                },
+                ct)
+            .ConfigureAwait(true);
+        ResultMessage = "Reminder settings saved. The service uses them from its next hourly check.";
+    }, token);
+
+    private Task SendSampleReminderAsync(CancellationToken token) => RunAsync(async ct =>
+    {
+        var digest = await _reminderService.SendSampleAsync(ct).ConfigureAwait(true);
+        ResultMessage = digest.Items.Count == 0
+            ? "Sample sent. Nothing needs a reminder today, so it was sent as a summary; the real digest would not be sent today."
+            : $"Sample sent: {digest.NeedsAttention.Count} certificate(s) need attention, {digest.Upcoming.Count} upcoming automatic renewal(s).";
+    }, token);
+
     private Task RefreshServiceAsync(CancellationToken token) => RunAsync(RefreshServiceCoreAsync, token);
     private Task StartServiceAsync(CancellationToken token) => ServiceActionAsync(_serviceManager.StartAsync, "Service started.", token);
     private Task StopServiceAsync(CancellationToken token) => ServiceActionAsync(_serviceManager.StopAsync, "Service stopped.", token);
@@ -242,6 +289,12 @@ public partial class SettingsViewModel : ObservableObject
         (AsyncRelayCommand)AddChatCommand, (AsyncRelayCommand)RemoveChatCommand, (AsyncRelayCommand)SaveHeartbeatCommand,
         (AsyncRelayCommand)RemoveHeartbeatCommand, (AsyncRelayCommand)SaveOptionsCommand, (AsyncRelayCommand)TestNotificationCommand,
         (AsyncRelayCommand)RefreshServiceCommand, (AsyncRelayCommand)RestartServiceCommand,
-        (AsyncRelayCommand)StartServiceCommand, (AsyncRelayCommand)StopServiceCommand
+        (AsyncRelayCommand)StartServiceCommand, (AsyncRelayCommand)StopServiceCommand,
+        (AsyncRelayCommand)SaveRemindersCommand, (AsyncRelayCommand)SendSampleReminderCommand
     ];
+}
+
+public sealed record HourOption(int Hour)
+{
+    public override string ToString() => $"{Hour:00}:00";
 }

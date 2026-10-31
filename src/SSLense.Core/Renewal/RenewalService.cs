@@ -81,7 +81,10 @@ internal sealed class RenewalService : IRenewalService
                 authority.Name,
                 authority.IsTest,
                 value.Source,
-                value.Issuer));
+                value.Issuer,
+                value.Reminders,
+                value.SnoozedUntil,
+                value.LastRemindedAt));
         }
 
         return statuses;

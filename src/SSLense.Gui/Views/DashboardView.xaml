@@ -87,6 +87,7 @@
                     <DataGridTextColumn Header="Source" Binding="{Binding Environment}" Width="110" />
                     <DataGridTextColumn Header="Expires" Binding="{Binding Expiry, StringFormat={}{0:dd MMM yyyy}}" Width="130" />
                     <DataGridTextColumn Header="Days left" Binding="{Binding DaysRemaining}" Width="90" />
+                    <DataGridTextColumn Header="Reminders" Binding="{Binding Reminders}" Width="140" />
                     <DataGridTemplateColumn Header="Status" Width="130">
                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                             <Border x:Name="StatusBadge" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="9,3" HorizontalAlignment="Left">
