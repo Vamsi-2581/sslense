@@ -23,7 +23,7 @@
     <StackPanel Visibility="{Binding IsStepOne, Converter={StaticResource BoolToVisibility}}">
      <TextBlock Text="Choose an IIS site" Style="{StaticResource SectionTitle}"/>
      <TextBlock Text="Select the website and host names SSLense should secure." Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
-     <TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}" DisplayMemberPath="DisplayName" Margin="0,0,0,10"/>
+     <TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}" DisplayMemberPath="DisplayName" Margin="0,0,0,10" AutomationProperties.Name="IIS site"/>
      <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,10" Visibility="{Binding SelectedSite.HasHttps, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}">
       <StackPanel>
        <TextBlock Text="This site already serves HTTPS" FontWeight="SemiBold"/>
@@ -37,7 +37,7 @@
      <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="12,7">
      <ItemsControl ItemsSource="{Binding Hosts}"><ItemsControl.ItemTemplate><DataTemplate>
       <Grid Margin="4,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions>
-       <CheckBox Content="{Binding Host}" IsChecked="{Binding IsSelected}" FontWeight="SemiBold"/>
+       <CheckBox Content="{Binding Host}" IsChecked="{Binding IsSelected}" FontWeight="SemiBold" AutomationProperties.Name="{Binding Host}"/>
        <TextBlock Grid.Column="1" Text="{Binding BindingStatus}" HorizontalAlignment="Right"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/><Style.Triggers><DataTrigger Binding="{Binding HasHttpBinding}" Value="False"><Setter Property="Foreground" Value="{StaticResource DangerBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
       </Grid>
      </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Border>
@@ -46,15 +46,15 @@
     <StackPanel Visibility="{Binding IsStepTwo, Converter={StaticResource BoolToVisibility}}">
      <TextBlock Text="Verify issuance readiness" Style="{StaticResource SectionTitle}"/>
      <TextBlock Text="SSLense checks access, bindings, and challenge-folder permissions before contacting Let's Encrypt." Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
-     <TextBlock Text="LET'S ENCRYPT ACCOUNT EMAIL" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+     <TextBlock Text="LET'S ENCRYPT ACCOUNT EMAIL" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16" AutomationProperties.Name="Let's Encrypt account email"/>
      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-      <RadioButton Content="Staging environment (recommended)" IsChecked="{Binding UseStaging}" Margin="0,0,20,0"/>
-      <RadioButton Content="Production environment" IsChecked="{Binding UseProduction}"/>
+      <RadioButton Content="Staging environment (recommended)" IsChecked="{Binding UseStaging}" Margin="0,0,20,0" AutomationProperties.Name="Staging environment (recommended)"/>
+      <RadioButton Content="Production environment" IsChecked="{Binding UseProduction}" AutomationProperties.Name="Production environment"/>
      </StackPanel>
-     <Border Margin="0,0,0,16"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource ErrorBanner}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding UseProduction}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style><StackPanel><TextBlock Text="Production certificates are publicly trusted and subject to Let's Encrypt rate limits." Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"/><CheckBox Content="I confirm the site and host names are correct and authorize replacing the live IIS binding." IsChecked="{Binding ProductionRiskAccepted}" Margin="0,8,0,0"/></StackPanel></Border>
+     <Border Margin="0,0,0,16"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource ErrorBanner}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding UseProduction}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style><StackPanel><TextBlock Text="Production certificates are publicly trusted and subject to Let's Encrypt rate limits." Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"/><CheckBox Content="I confirm the site and host names are correct and authorize replacing the live IIS binding." IsChecked="{Binding ProductionRiskAccepted}" Margin="0,8,0,0" AutomationProperties.Name="Confirm site and host names and authorize replacing the live IIS binding"/></StackPanel></Border>
      <Button Content="Run pre-flight checks" Command="{Binding PreflightCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,0,0,14"/>
      <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" ClipToBounds="True">
-     <DataGrid ItemsSource="{Binding PreflightChecks}" Height="210">
+     <DataGrid ItemsSource="{Binding PreflightChecks}" Height="210" AutomationProperties.Name="Pre-flight results">
       <DataGrid.Columns><DataGridTextColumn Header="Check" Binding="{Binding Name}" Width="1.2*"/><DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="70"/><DataGridTextColumn Header="Details" Binding="{Binding Message}" Width="2*"/></DataGrid.Columns>
      </DataGrid></Border>
      <TextBlock Text="{Binding ResultMessage}" FontWeight="SemiBold" Foreground="{StaticResource SuccessBrush}" Margin="0,12,0,0"/>
