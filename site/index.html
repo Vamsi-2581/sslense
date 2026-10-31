@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SSLense – Free, Open-Source SSL Certificates for IIS</title>
-<meta name="description" content="Free, open-source Windows tool that installs Let’s Encrypt SSL certificates on IIS and renews them automatically. Desktop app, CLI and background service.">
+<meta name="description" content="Free, open-source Windows tool that installs Let’s Encrypt SSL certificates on IIS and renews them automatically, and tracks certificates bought elsewhere with expiry reminders. Desktop app, CLI and background service.">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://sslense.com/">
 <meta name="theme-color" content="#0b2545">
 <meta property="og:site_name" content="SSLense">
 <meta property="og:title" content="SSLense – Free, Open-Source SSL Certificates for IIS">
-<meta property="og:description" content="Install and auto-renew free Let’s Encrypt certificates on IIS with a desktop app and CLI. Open source under Apache-2.0.">
+<meta property="og:description" content="Install and auto-renew free Let’s Encrypt certificates on IIS, and get expiry reminders for certificates from any provider. Open source under Apache-2.0.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://sslense.com/">
 <meta property="og:image" content="https://sslense.com/og-image.png">
@@ -21,7 +21,7 @@
 <meta name="twitter:title" content="SSLense – Free, Open-Source SSL Certificates for IIS">
 <meta name="twitter:description" content="Install and auto-renew free Let’s Encrypt certificates on IIS with a desktop app and CLI.">
 <meta name="twitter:image" content="https://sslense.com/og-image.png">
-<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://sslense.com/#website","url":"https://sslense.com/","name":"SSLense"},{"@type":"SoftwareApplication","@id":"https://sslense.com/#app","name":"SSLense","url":"https://sslense.com/","applicationCategory":"SecurityApplication","operatingSystem":"Windows Server","description":"Free, open-source Windows application with a GUI, a CLI and a background service that obtains Let’s Encrypt SSL certificates for IIS sites, binds them and renews them automatically.","license":"https://www.apache.org/licenses/LICENSE-2.0","downloadUrl":"https://github.com/panchalvimaldev/sslense/releases","sameAs":["https://github.com/panchalvimaldev/sslense"],"isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is SSLense free?","acceptedAnswer":{"@type":"Answer","text":"Yes. SSLense is open source under the Apache License 2.0, so you can use it at no cost, including commercially, and read or change the code. Let’s Encrypt certificates are free as well."}},{"@type":"Question","name":"What do I need to run it?","acceptedAnswer":{"@type":"Answer","text":"Windows Server with IIS, administrator access, and a domain that points to the server. Port 80 must be reachable from the internet for domain validation. The installer includes everything else, including the .NET runtime."}},{"@type":"Question","name":"Where are my private keys stored?","acceptedAnswer":{"@type":"Answer","text":"Only on your own server, in the Windows certificate store, marked non-exportable. SSLense’s own data folder is restricted to Administrators and SYSTEM, and its secrets are encrypted with Windows DPAPI. Nothing is sent to SSLense."}},{"@type":"Question","name":"Why does Windows show a SmartScreen warning?","acceptedAnswer":{"@type":"Answer","text":"Current releases are not code-signed yet, so Windows SmartScreen may warn the first time you run the installer. Signing is planned before version 1.0. Each release lists a SHA-256 checksum so you can verify the download."}},{"@type":"Question","name":"How is SSLense different from other ACME clients?","acceptedAnswer":{"@type":"Answer","text":"SSLense is built only for IIS. It verifies each new binding over HTTPS and rolls back automatically if anything goes wrong, explains failures in plain language, includes a health check, and offers both a desktop app and a full command line."}}]}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://sslense.com/#website","url":"https://sslense.com/","name":"SSLense"},{"@type":"SoftwareApplication","@id":"https://sslense.com/#app","name":"SSLense","url":"https://sslense.com/","applicationCategory":"SecurityApplication","operatingSystem":"Windows Server","description":"Free, open-source Windows application with a GUI, a CLI and a background service that obtains Let’s Encrypt SSL certificates for IIS sites, binds them and renews them automatically. It also installs and monitors certificates bought from other providers, with a daily expiry reminder digest.","license":"https://www.apache.org/licenses/LICENSE-2.0","downloadUrl":"https://github.com/panchalvimaldev/sslense/releases","sameAs":["https://github.com/panchalvimaldev/sslense"],"isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is SSLense free?","acceptedAnswer":{"@type":"Answer","text":"Yes. SSLense is open source under the Apache License 2.0, so you can use it at no cost, including commercially, and read or change the code. Let’s Encrypt certificates are free as well."}},{"@type":"Question","name":"What do I need to run it?","acceptedAnswer":{"@type":"Answer","text":"Windows Server with IIS, administrator access, and a domain that points to the server. Port 80 must be reachable from the internet for domain validation. The installer includes everything else, including the .NET runtime."}},{"@type":"Question","name":"Where are my private keys stored?","acceptedAnswer":{"@type":"Answer","text":"Only on your own server, in the Windows certificate store, marked non-exportable. SSLense’s own data folder is restricted to Administrators and SYSTEM, and its secrets are encrypted with Windows DPAPI. Nothing is sent to SSLense."}},{"@type":"Question","name":"Why does Windows show a SmartScreen warning?","acceptedAnswer":{"@type":"Answer","text":"Current releases are not code-signed yet, so Windows SmartScreen may warn the first time you run the installer. Signing is planned before version 1.0. Each release lists a SHA-256 checksum so you can verify the download."}},{"@type":"Question","name":"Can SSLense manage a certificate I bought from another provider?","acceptedAnswer":{"@type":"Answer","text":"Yes. For a certificate from a provider such as 123-reg, Sectigo or DigiCert, SSLense creates the certificate request with a private key that never leaves your server, installs the issued certificate safely, imports a PFX, or starts monitoring a certificate already bound in IIS. It cannot renew those certificates itself, so it reminds you to order the renewal in time."}},{"@type":"Question","name":"How do expiry reminders work?","acceptedAnswer":{"@type":"Answer","text":"The service sends one daily digest to your email, chat or Event Log, but only when a certificate needs attention: from a set number of days before expiry (30 by default), repeating until it is renewed. Let’s Encrypt certificates renew on their own; you hear about them only once beforehand or if renewal fails. Reminders can be snoozed or turned off per certificate."}},{"@type":"Question","name":"How is SSLense different from other ACME clients?","acceptedAnswer":{"@type":"Answer","text":"SSLense is built only for IIS. It verifies each new binding over HTTPS and rolls back automatically if anything goes wrong, explains failures in plain language, includes a health check, and offers both a desktop app and a full command line."}}]}]}</script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -100,7 +100,7 @@ footer nav{justify-content:center;margin-bottom:10px}
 <div class="hero">
   <span class="pill">Free &amp; open source · Apache-2.0 · Windows Server &amp; IIS</span>
   <h1>Free SSL certificates for IIS, installed and renewed automatically.</h1>
-  <p class="sub">SSLense gets Let’s Encrypt certificates onto your IIS sites and keeps them renewed, with a desktop app, a command line and a background service. No manual binding, no expired-certificate surprises.</p>
+  <p class="sub">SSLense gets Let’s Encrypt certificates onto your IIS sites and keeps them renewed, and watches the certificates you buy elsewhere too, with a desktop app, a command line and a background service. No manual binding, no expired-certificate surprises.</p>
   <div class="actions">
     <a class="btn" href="https://github.com/panchalvimaldev/sslense/releases">Download for Windows</a>
     <a class="btn ghost" href="https://github.com/panchalvimaldev/sslense">View source on GitHub</a>
@@ -113,6 +113,7 @@ footer nav{justify-content:center;margin-bottom:10px}
       <tr><th>Site</th><th>Hosts</th><th>Expires</th><th>Status</th></tr>
       <tr><td>Main website</td><td>example.com, www.example.com</td><td>54 days</td><td><span class="dot" style="background:var(--ok)"></span>Healthy</td></tr>
       <tr><td>Customer portal</td><td>portal.example.com</td><td>19 days</td><td><span class="dot" style="background:var(--warn)"></span>Renewal scheduled</td></tr>
+      <tr><td>Online shop</td><td>shop.example.com</td><td>24 days</td><td><span class="dot" style="background:var(--warn)"></span>Order renewal (imported)</td></tr>
       <tr><td>Staging API</td><td>api-test.example.com</td><td>41 days</td><td><span class="dot" style="background:var(--ok)"></span>Healthy</td></tr>
     </table></div>
   </div>
@@ -126,6 +127,8 @@ footer nav{justify-content:center;margin-bottom:10px}
     <div class="card"><h3>Guided issuance</h3><p>Pick a site and its host names, run the pre-flight checks, and issue. SSLense validates the domain, installs the certificate and adds the HTTPS binding with SNI.</p></div>
     <div class="card"><h3>Safe binding swaps</h3><p>After every change SSLense connects over HTTPS to confirm the new certificate is actually served. If not, it restores the previous binding automatically.</p></div>
     <div class="card"><h3>Automatic renewal</h3><p>A Windows service checks hourly and renews when Let’s Encrypt recommends (ACME Renewal Information), with saved retries that survive reboots and respect rate limits.</p></div>
+    <div class="card"><h3>Certificates from any provider</h3><p>Bought a certificate from 123-reg, Sectigo or DigiCert? Create the request with a key that never leaves the server, install the issued certificate with the same safe swap, import a PFX, or adopt one already bound in IIS.</p></div>
+    <div class="card"><h3>Expiry reminders, not daily checks</h3><p>One digest a day, sent only when a certificate needs attention, from a set number of days before expiry until it is renewed. Snooze or turn off reminders per certificate, and get a notice before each automatic renewal.</p></div>
     <div class="card"><h3>Alerts that fit your setup</h3><p>Email through any SMTP server or relay (including Microsoft 365 by IP address), Teams, Slack, Discord, Telegram, ntfy push, a heartbeat ping, and the Windows Event Log.</p></div>
     <div class="card"><h3>Health check and diagnostics</h3><p>One command checks the service, permissions, IIS, DNS, port 80 and Let’s Encrypt, with a fix for each problem, and builds a redacted bundle for support.</p></div>
     <div class="card"><h3>Secure by default</h3><p>Non-exportable private keys, no stored PFX files, secrets encrypted with DPAPI, a data folder limited to Administrators and SYSTEM, and staging until you choose production.</p></div>
@@ -153,13 +156,19 @@ SSLense.Cli issue --site "My Site" --hosts example.com,www.example.com --email y
 <span class="c"># Day to day</span>
 SSLense.Cli status
 SSLense.Cli health
-SSLense.Cli notifications email --preset m365-relay --host contoso-com.mail.protection.outlook.com --from alerts@contoso.com --to ops@contoso.com</pre>
+SSLense.Cli notifications email --preset m365-relay --host contoso-com.mail.protection.outlook.com --from alerts@contoso.com --to ops@contoso.com
+SSLense.Cli reminders set --start-days 45 --send-at 8
+
+<span class="c"># A certificate from another provider: monitor the one in IIS, or request and install the next one</span>
+SSLense.Cli adopt --site "Shop"
+SSLense.Cli csr --site "Shop" --hosts shop.example.com
+SSLense.Cli complete --site "Shop" --certificate shop.crt --chain shop.ca-bundle</pre>
 </section>
 
 <section id="roadmap">
   <h2>On the roadmap</h2>
   <p class="lead">Priorities are shaped by feedback on GitHub.</p>
-  <div class="chips soon"><span>Code-signed releases</span><span>winget package</span><span>DNS validation &amp; wildcard certificates</span><span>Several certificates per site</span><span>Adopt existing certificates</span><span>Other ACME certificate authorities</span></div>
+  <div class="chips soon"><span>Code-signed releases</span><span>winget package</span><span>DNS validation &amp; wildcard certificates</span><span>Several certificates per site</span><span>Other ACME certificate authorities (ZeroSSL, Google)</span><span>Bindings without a host name</span></div>
 </section>
 
 <section id="guides">
@@ -177,6 +186,8 @@ SSLense.Cli notifications email --preset m365-relay --host contoso-com.mail.prot
   <details><summary>What do I need to run it?</summary><p>Windows Server with IIS, administrator access, and a domain that points to the server. Port 80 must be reachable from the internet for domain validation. The installer includes everything else, including the .NET runtime.</p></details>
   <details><summary>Where are my private keys stored?</summary><p>Only on your own server, in the Windows certificate store, marked non-exportable. SSLense’s own data folder is restricted to Administrators and SYSTEM, and its secrets are encrypted with Windows DPAPI. Nothing is sent to SSLense.</p></details>
   <details><summary>Why does Windows show a SmartScreen warning?</summary><p>Current releases are not code-signed yet, so Windows SmartScreen may warn the first time you run the installer. Signing is planned before version 1.0. Each release lists a SHA-256 checksum so you can verify the download.</p></details>
+  <details><summary>Can SSLense manage a certificate I bought from another provider?</summary><p>Yes. For a certificate from a provider such as 123-reg, Sectigo or DigiCert, SSLense creates the certificate request with a private key that never leaves your server, installs the issued certificate safely, imports a PFX, or starts monitoring a certificate already bound in IIS. It cannot renew those certificates itself, so it reminds you to order the renewal in time.</p></details>
+  <details><summary>How do expiry reminders work?</summary><p>The service sends one daily digest to your email, chat or Event Log, but only when a certificate needs attention: from a set number of days before expiry (30 by default), repeating until it is renewed. Let’s Encrypt certificates renew on their own; you hear about them only once beforehand or if renewal fails. Reminders can be snoozed or turned off per certificate.</p></details>
   <details><summary>How is SSLense different from other ACME clients?</summary><p>SSLense is built only for IIS. It verifies each new binding over HTTPS and rolls back automatically if anything goes wrong, explains failures in plain language, includes a health check, and offers both a desktop app and a full command line.</p></details>
 </section>
 
