@@ -61,7 +61,7 @@
                         Background="#18243A" BorderBrush="#334155" BorderThickness="1">
                     <DockPanel>
                         <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Fill="#FBBF24" Margin="0,0,8,0" />
-                        <TextBlock Text="STAGING DEFAULT • PRODUCTION GUARDED" Foreground="#FDE68A" FontSize="10" FontWeight="SemiBold" />
+                        <TextBlock Text="STAGING BY DEFAULT · PRODUCTION GUARDED" Foreground="#FDE68A" FontSize="10" FontWeight="SemiBold" TextWrapping="Wrap" />
                     </DockPanel>
                 </Border>
                 <ListBox Grid.Row="2" ItemsSource="{Binding Pages}"

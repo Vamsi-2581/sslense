@@ -1,10 +1,63 @@
 # SSLense
 
-SSLense is a free, open-source .NET 10 (LTS) Windows tool for issuing and automatically renewing Let's Encrypt certificates for IIS. The CLI and Windows Service use the same `SSLense.Core` services and the same state under `C:\ProgramData\SSLense`.
+**Free SSL certificates for IIS, installed and renewed automatically, and a reminder before any certificate expires.**
 
-Planned work is in [ROADMAP.md](ROADMAP.md). SSLense is licensed under the [Apache License 2.0](LICENSE).
+[![CI](https://github.com/panchalvimaldev/sslense/actions/workflows/ci.yml/badge.svg)](https://github.com/panchalvimaldev/sslense/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/panchalvimaldev/sslense?include_prereleases&label=release)](https://github.com/panchalvimaldev/sslense/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-> SSLense defaults to Let's Encrypt **staging**. Production issuance is guarded by an explicit environment choice and risk acknowledgement. Development and automated tests never contact the production endpoint.
+SSLense is a Windows application for IIS administrators. It gets free Let's Encrypt certificates onto your IIS sites and keeps them renewed. It also keeps track of the certificates you buy from providers such as 123-reg, Sectigo or DigiCert, and tells you in time to order the next one. It comes with a desktop app, a command line, and a background service. Website: [sslense.com](https://sslense.com).
+
+![The SSLense dashboard: managed certificates with their source, expiry, reminder setting and health](docs/images/SSLense-Dashboard.png)
+
+## Why SSLense
+
+- **A failed renewal never takes a site down.** After every change, SSLense connects to the site over HTTPS to check the new certificate is really served. If it isn't, the previous binding is restored automatically.
+- **Certificates from any provider, not only Let's Encrypt.** It creates the certificate request with a private key that never leaves the server, installs what the provider issues with the same safety checks, or simply starts watching a certificate that is already in IIS.
+- **No need to log on to the server to check expiry dates.** One digest a day, sent only when something needs attention, by email (any SMTP setup, including Microsoft 365 relays), Teams, Slack, Discord, Telegram, ntfy, or the Windows Event Log.
+- **Problems explained, with a fix for each one.** A health check covers the service, permissions, IIS, DNS, port 80, and Let's Encrypt. A redacted diagnostic bundle can be attached to a bug report.
+- **Secure by default.** Private keys are non-exportable, no PFX files are kept, secrets are encrypted with Windows DPAPI, and SSLense's data folder is restricted to Administrators and SYSTEM.
+- **Free and open source** under the Apache License 2.0, including commercial use.
+
+## Quick start
+
+1. Download the latest `SSLense-<version>-x64.msi` from [Releases](https://github.com/panchalvimaldev/sslense/releases) and run it on the IIS server. It installs the desktop app, the command line, and the renewal service. No separate .NET installation is needed. Releases are not code-signed yet, so Windows SmartScreen may warn; each release lists a SHA-256 checksum to verify the download.
+2. Open **SSLense** from the Start menu.
+3. Then either:
+   - **Let's Encrypt:** **Issue Certificate**, choose the site and host names, run the pre-flight checks, and issue. Use staging first; production needs an explicit confirmation. The site needs a public DNS record and a port 80 binding.
+   - **A certificate you bought:** **Other Providers** → select the site's HTTPS binding → **Adopt selected**.
+4. Under **Settings**, add an email or chat channel and click **Send test**, then check **Settings → Reminders**.
+
+From then on the service renews Let's Encrypt certificates on its own, and the daily digest reminds you about anything that needs you. Everything in the app is also available from the command line; see [CLI usage](#cli-usage).
+
+<details>
+<summary><b>More screenshots</b></summary>
+
+**Issue a certificate:** pick the site and host names. A site that already serves HTTPS shows which certificate it uses.
+
+![Issue Certificate: choosing the IIS site and host names](docs/images/SSLense-IssueCertificate.png)
+
+**Other providers:** create a request for a certificate you buy elsewhere, complete it, import a PFX, or adopt one already in IIS.
+
+![Other Providers: requesting, completing, and importing certificates from other providers](docs/images/SSLense-OtherProviders.png)
+
+**Settings → Reminders:** when the daily digest starts, how often it repeats, and when it is sent.
+
+![Settings: reminder schedule with Send sample digest](docs/images/SSLense-Settings.png)
+
+</details>
+
+## Get involved
+
+- **Questions and ideas:** [GitHub Discussions](https://github.com/panchalvimaldev/sslense/discussions). **Bugs:** [Issues](https://github.com/panchalvimaldev/sslense/issues); run `SSLense.Cli diagnostics` and attach the bundle.
+- **Contributing:** start with issues labelled [good first issue](https://github.com/panchalvimaldev/sslense/labels/good%20first%20issue) and read [CONTRIBUTING.md](CONTRIBUTING.md). The test suite runs on any Windows machine with the .NET 10 SDK. It needs no Administrator rights, never changes IIS, and never contacts Let's Encrypt.
+- **What's planned:** [ROADMAP.md](ROADMAP.md). **Security reports:** [SECURITY.md](SECURITY.md).
+
+---
+
+The rest of this page is the reference: requirements, building, every CLI command, notifications, the service, the GUI, data files, and troubleshooting.
+
+> SSLense defaults to Let's Encrypt **staging**. Production issuance is guarded by an explicit choice and acknowledgement. Development and automated tests never contact the production endpoint.
 
 ## Requirements
 
@@ -303,7 +356,7 @@ Windows displays an administrator elevation prompt because the application manif
 
 Staging remains the wizard default. Production requires a separate selection and acknowledgement before the Issue button is enabled. Use **Issue certificate** on the Dashboard to open the wizard. Removing a certificate requires confirmation and removes only matching HTTPS bindings; a certificate still used by another IIS site is retained in the Windows certificate store.
 
-The Phase 7 Core operations also have CLI equivalents:
+The same operations from the command line:
 
 ```powershell
 dotnet run --project .\src\SSLense.Cli -- preflight --site "My IIS Site" --hosts example.com
@@ -396,7 +449,7 @@ Review the current daily log in `C:\ProgramData\SSLense\logs` for the full excep
 ## Contributing, security, and support
 
 - **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md). Commits are signed off under the Developer Certificate of Origin.
-- **Website:** [sslense.com](https://sslense.com) is the static site in [`site/`](site/), deployed to Cloudflare Pages with no build step.
+- **Website:** [sslense.com](https://sslense.com) is the static site in [`site/`](site/), deployed by Cloudflare (Workers static assets, `site/wrangler.jsonc`) whenever `site/` changes; there is no build step.
 - **Security issues:** report them privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
 - **Bugs and questions:** open a GitHub issue with the output of `SSLense.Cli health` and a bundle from `SSLense.Cli diagnostics` (add `--redact-hosts` if your host names are private).
 
