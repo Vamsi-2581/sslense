@@ -3,6 +3,7 @@ using SSLense.Core;
 using SSLense.Core.Acme;
 using SSLense.Core.Config;
 using SSLense.Core.Iis;
+using SSLense.Core.Reminders;
 using SSLense.Core.Renewal;
 using SSLense.Core.WindowsServices;
 using SSLense.Core.Notifications;
@@ -288,6 +289,7 @@ static RootCommand CreateRootCommand(IServiceProvider services)
     }
 
     rootCommand.Subcommands.Add(CreateNotificationsCommand(services));
+    rootCommand.Subcommands.Add(CreateRemindersCommand(services));
     AddImportedCertificateCommands(rootCommand, services);
 
     return rootCommand;
@@ -733,6 +735,209 @@ static Command CreateNotificationsCommand(IServiceProvider services)
         () => Settings().ClearAsync(token), "All notification channels were removed. The Windows Event Log stays on."));
     command.Subcommands.Add(clearCommand);
     return command;
+}
+
+static Command CreateRemindersCommand(IServiceProvider services)
+{
+    IReminderService Reminders() => services.GetRequiredService<IReminderService>();
+    var command = new Command(
+        "reminders",
+        "Daily reminder digest for certificates close to expiry: settings, per-certificate snooze or off, and a preview.");
+
+    var showCommand = new Command("show", "Show the reminder settings and each certificate's reminder state.");
+    showCommand.SetAction((_, token) => ShowRemindersAsync(Reminders(), token));
+    command.Subcommands.Add(showCommand);
+
+    var startOption = new Option<int?>("--start-days") { Description = $"Start reminding this many days before expiry (1-{ReminderConfig.MaximumStartDays})." };
+    var repeatOption = new Option<int?>("--repeat-days") { Description = $"Days between reminders for a certificate (1-{ReminderConfig.MaximumRepeatDays}); daily in the last 7 days." };
+    var sendAtOption = new Option<int?>("--send-at") { Description = "Hour of the day (0-23, server time) from which the digest is sent." };
+    var noticesOption = new Option<string?>("--notices") { Description = "One notice when an automatic certificate is about to renew: on or off." };
+    noticesOption.AcceptOnlyFromAmong("on", "off");
+    var weeklyOption = new Option<string?>("--weekly") { Description = "Weekly summary: off, or a day such as monday." };
+    weeklyOption.AcceptOnlyFromAmong(["off", .. Enum.GetNames<DayOfWeek>().Select(day => day.ToLowerInvariant())]);
+    var setCommand = new Command("set", "Change the reminder settings; options left out keep their value.");
+    foreach (var option in new Option[] { startOption, repeatOption, sendAtOption, noticesOption, weeklyOption })
+    {
+        setCommand.Options.Add(option);
+    }
+
+    setCommand.SetAction((parseResult, token) => SetRemindersAsync(
+        Reminders(),
+        parseResult.GetValue(startOption),
+        parseResult.GetValue(repeatOption),
+        parseResult.GetValue(sendAtOption),
+        parseResult.GetValue(noticesOption),
+        parseResult.GetValue(weeklyOption),
+        token));
+    command.Subcommands.Add(setCommand);
+
+    var siteOption = new Option<string>("--site") { Required = true, Description = "Managed IIS site." };
+    var modeOption = new Option<string>("--mode")
+    {
+        Required = true,
+        Description = "on, snooze, off-until-replaced (until a new certificate is installed), or off (permanently)."
+    };
+    modeOption.AcceptOnlyFromAmong("on", "snooze", "off-until-replaced", "off");
+    var daysOption = new Option<int?>("--days") { Description = "With snooze: days until reminders resume (default 7)." };
+    var siteCommand = new Command("site", "Turn reminders on, snooze them, or turn them off for one certificate.");
+    siteCommand.Options.Add(siteOption);
+    siteCommand.Options.Add(modeOption);
+    siteCommand.Options.Add(daysOption);
+    siteCommand.SetAction((parseResult, token) => SetSiteRemindersAsync(
+        Reminders(),
+        parseResult.GetRequiredValue(siteOption),
+        parseResult.GetRequiredValue(modeOption),
+        parseResult.GetValue(daysOption),
+        token));
+    command.Subcommands.Add(siteCommand);
+
+    var previewCommand = new Command("preview", "Print today's digest as it would be sent now, without sending or recording anything.");
+    previewCommand.SetAction((_, token) => PreviewRemindersAsync(Reminders(), token));
+    command.Subcommands.Add(previewCommand);
+
+    var sampleCommand = new Command("send-sample", "Send today's digest, marked as a sample, through every channel. Nothing is recorded.");
+    sampleCommand.SetAction((_, token) => SendSampleReminderAsync(Reminders(), token));
+    command.Subcommands.Add(sampleCommand);
+    return command;
+}
+
+static async Task<int> ShowRemindersAsync(IReminderService reminders, CancellationToken token)
+{
+    try
+    {
+        var overview = await reminders.GetOverviewAsync(token).ConfigureAwait(false);
+        var settings = overview.Settings;
+        Console.WriteLine($"Start reminding: {settings.StartDays} days before expiry");
+        Console.WriteLine($"Repeat: every {settings.RepeatDays} day(s), daily in the last 7 days");
+        Console.WriteLine($"Daily digest: from {settings.SendAtHour:00}:00 server time, only when something needs attention");
+        Console.WriteLine($"Upcoming automatic renewal notices: {(settings.UpcomingRenewalNotices ? "on" : "off")}");
+        Console.WriteLine($"Weekly summary: {settings.WeeklySummaryDay?.ToString() ?? "off"}");
+        Console.WriteLine($"Last digest handled: {overview.LastDigestDate?.ToString("yyyy-MM-dd") ?? "never (the service handles it from the send time)"}");
+        Console.WriteLine();
+        foreach (var certificate in overview.Certificates.OrderBy(value => value.NotAfter))
+        {
+            var state = certificate.Reminders switch
+            {
+                ReminderMode.Snoozed => $"snoozed until {certificate.SnoozedUntil?.ToLocalTime():yyyy-MM-dd HH:mm}",
+                ReminderMode.OffUntilReplaced => "off until replaced",
+                ReminderMode.Off => "off permanently",
+                _ => "on"
+            };
+            var last = certificate.LastRemindedAt is { } at ? $", last reminded {at.ToLocalTime():yyyy-MM-dd}" : string.Empty;
+            Console.WriteLine($"{certificate.SiteName}: expires {certificate.NotAfter.ToLocalTime():yyyy-MM-dd}, reminders {state}{last}");
+        }
+
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Failed to show reminders");
+    }
+}
+
+static async Task<int> SetRemindersAsync(
+    IReminderService reminders,
+    int? startDays,
+    int? repeatDays,
+    int? sendAt,
+    string? notices,
+    string? weekly,
+    CancellationToken token)
+{
+    if (startDays is null && repeatDays is null && sendAt is null && notices is null && weekly is null)
+    {
+        Console.Error.WriteLine("Error: specify at least one of --start-days, --repeat-days, --send-at, --notices, --weekly.");
+        return 1;
+    }
+
+    try
+    {
+        var current = (await reminders.GetOverviewAsync(token).ConfigureAwait(false)).Settings;
+        await reminders.SaveSettingsAsync(
+                current with
+                {
+                    StartDays = startDays ?? current.StartDays,
+                    RepeatDays = repeatDays ?? current.RepeatDays,
+                    SendAtHour = sendAt ?? current.SendAtHour,
+                    UpcomingRenewalNotices = notices is null ? current.UpcomingRenewalNotices : notices == "on",
+                    WeeklySummaryDay = weekly is null
+                        ? current.WeeklySummaryDay
+                        : weekly == "off" ? null : Enum.Parse<DayOfWeek>(weekly, ignoreCase: true)
+                },
+                token)
+            .ConfigureAwait(false);
+        Console.WriteLine("Reminder settings saved. The service uses them from its next hourly check.");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Failed to save reminder settings");
+    }
+}
+
+static async Task<int> SetSiteRemindersAsync(IReminderService reminders, string site, string mode, int? days, CancellationToken token)
+{
+    try
+    {
+        var reminderMode = mode switch
+        {
+            "snooze" => ReminderMode.Snoozed,
+            "off-until-replaced" => ReminderMode.OffUntilReplaced,
+            "off" => ReminderMode.Off,
+            _ => ReminderMode.On
+        };
+        await reminders.SetCertificateRemindersAsync(site, reminderMode, reminderMode == ReminderMode.Snoozed ? days ?? 7 : null, token)
+            .ConfigureAwait(false);
+        Console.WriteLine(reminderMode switch
+        {
+            ReminderMode.Snoozed => $"Reminders for '{site}' are snoozed for {days ?? 7} day(s).",
+            ReminderMode.OffUntilReplaced => $"Reminders for '{site}' are off until its certificate is replaced.",
+            ReminderMode.Off => $"Reminders for '{site}' are off permanently. Renewal failures are still reported.",
+            _ => $"Reminders for '{site}' are on."
+        });
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Failed to change certificate reminders");
+    }
+}
+
+static async Task<int> PreviewRemindersAsync(IReminderService reminders, CancellationToken token)
+{
+    try
+    {
+        var digest = await reminders.PreviewAsync(token).ConfigureAwait(false);
+        if (!digest.HasContent)
+        {
+            Console.WriteLine("Nothing needs a reminder today, so no digest would be sent.");
+            return 0;
+        }
+
+        var message = digest.ToMessage(Environment.MachineName);
+        Console.WriteLine(message.Subject);
+        Console.WriteLine();
+        Console.WriteLine(message.Body);
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Failed to preview reminders");
+    }
+}
+
+static async Task<int> SendSampleReminderAsync(IReminderService reminders, CancellationToken token)
+{
+    try
+    {
+        await reminders.SendSampleAsync(token).ConfigureAwait(false);
+        Console.WriteLine("Sample digest sent through every configured channel.");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        return ReportFailure(exception, "Failed to send the sample digest");
+    }
 }
 
 static async Task<int> ShowNotificationsAsync(INotificationSettingsService settings, CancellationToken token)

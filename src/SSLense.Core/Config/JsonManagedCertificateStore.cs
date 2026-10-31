@@ -124,6 +124,35 @@ public sealed class JsonManagedCertificateStore : IManagedCertificateStore
             },
             cancellationToken);
 
+    public async Task<bool> SetReminderModeAsync(
+        string siteName,
+        ReminderMode mode,
+        DateTimeOffset? snoozedUntil,
+        CancellationToken cancellationToken = default)
+    {
+        var found = false;
+        await UpdateAsync(
+                records =>
+                {
+                    var index = records.FindIndex(value => IsSite(value, siteName));
+                    if (index < 0)
+                    {
+                        return false;
+                    }
+
+                    found = true;
+                    records[index] = records[index] with
+                    {
+                        Reminders = mode,
+                        SnoozedUntil = mode == ReminderMode.Snoozed ? snoozedUntil : null
+                    };
+                    return true;
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        return found;
+    }
+
     /// <summary>
     /// Reminder state belongs to the site's record: an install or renewal keeps it, and a new certificate starts its
     /// reminders afresh, except when the administrator turned them off permanently.

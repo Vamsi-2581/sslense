@@ -21,7 +21,30 @@ public interface IReminderService
 
     /// <summary>Today's digest as it would be sent now, regardless of the send time; nothing is sent or recorded.</summary>
     Task<ReminderDigest> PreviewAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends today's digest marked as a sample, so the administrator can see it and check delivery. When nothing needs
+    /// attention it is sent as a summary. Nothing is recorded, so the real reminders are unchanged.
+    /// </summary>
+    Task<ReminderDigest> SendSampleAsync(CancellationToken cancellationToken = default);
+
+    Task<ReminderOverview> GetOverviewAsync(CancellationToken cancellationToken = default);
+
+    Task SaveSettingsAsync(ReminderConfig settings, CancellationToken cancellationToken = default);
+
+    /// <param name="snoozeDays">With <see cref="ReminderMode.Snoozed"/>: days until reminders resume.</param>
+    Task SetCertificateRemindersAsync(
+        string siteName,
+        ReminderMode mode,
+        int? snoozeDays = null,
+        CancellationToken cancellationToken = default);
 }
+
+/// <param name="LastDigestDate">The last day the digest was handled by the service, or null if it never ran.</param>
+public sealed record ReminderOverview(
+    ReminderConfig Settings,
+    IReadOnlyList<ManagedCertificate> Certificates,
+    DateOnly? LastDigestDate);
 
 internal sealed class ReminderService(
     IManagedCertificateStore managedStore,
@@ -29,11 +52,32 @@ internal sealed class ReminderService(
     IRenewalService renewalService,
     IReminderStateStore stateStore,
     INotifier notifier,
+    IOutsideRenewalDetector outsideRenewals,
     TimeProvider? timeProvider = null) : IReminderService
 {
+    public const int MaximumSnoozeDays = 90;
+
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     public async Task<IReadOnlyList<ReminderCheckResult>> CheckAsync(CancellationToken cancellationToken = default)
+    {
+        // Every hour, so a certificate replaced by hand stops being reminded about before the next digest.
+        var results = new List<ReminderCheckResult>();
+        try
+        {
+            results.AddRange((await outsideRenewals.DetectAsync(cancellationToken).ConfigureAwait(false))
+                .Select(change => new ReminderCheckResult(change)));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            results.Add(new ReminderCheckResult($"Could not check for certificates replaced outside SSLense: {exception.Message}", Failed: true));
+        }
+
+        results.AddRange(await SendDigestIfDueAsync(cancellationToken).ConfigureAwait(false));
+        return results;
+    }
+
+    private async Task<IReadOnlyList<ReminderCheckResult>> SendDigestIfDueAsync(CancellationToken cancellationToken)
     {
         var now = _time.GetLocalNow();
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -79,6 +123,59 @@ internal sealed class ReminderService(
         var now = _time.GetLocalNow();
         return await BuildAsync(config.Reminders, now, weeklySummary: config.Reminders.WeeklySummaryDay == now.DayOfWeek, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async Task<ReminderDigest> SendSampleAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var digest = await BuildAsync(config.Reminders, _time.GetLocalNow(), weeklySummary: false, cancellationToken).ConfigureAwait(false);
+        if (!digest.HasContent)
+        {
+            digest = digest with { IsWeeklySummary = true };
+        }
+
+        await notifier.NotifyAsync(digest.ToMessage(Environment.MachineName, sample: true), cancellationToken).ConfigureAwait(false);
+        return digest;
+    }
+
+    public async Task<ReminderOverview> GetOverviewAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var certificates = await managedStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var state = await stateStore.GetAsync(cancellationToken).ConfigureAwait(false);
+        return new ReminderOverview(config.Reminders, certificates, state.LastDigestDate);
+    }
+
+    public async Task SaveSettingsAsync(ReminderConfig settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.Validate();
+        var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        await configStore.SaveAsync(config with { Reminders = settings }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetCertificateRemindersAsync(
+        string siteName,
+        ReminderMode mode,
+        int? snoozeDays = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteName);
+        DateTimeOffset? until = null;
+        if (mode == ReminderMode.Snoozed)
+        {
+            if (snoozeDays is not (>= 1 and <= MaximumSnoozeDays))
+            {
+                throw new ArgumentOutOfRangeException(nameof(snoozeDays), $"Snooze for 1 to {MaximumSnoozeDays} days.");
+            }
+
+            until = _time.GetUtcNow().AddDays(snoozeDays.Value);
+        }
+
+        if (!await managedStore.SetReminderModeAsync(siteName, mode, until, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"IIS site '{siteName}' is not managed by SSLense.");
+        }
     }
 
     private async Task<ReminderDigest> BuildAsync(

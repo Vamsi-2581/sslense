@@ -14,6 +14,7 @@ public sealed class ReminderServiceTests
     private readonly JsonReminderStateStore _state;
     private readonly Mock<INotifier> _notifier = new(MockBehavior.Strict);
     private readonly List<NotificationMessage> _sent = [];
+    private readonly Mock<IOutsideRenewalDetector> _detector = new();
     private readonly TestClock _clock = new(new DateTimeOffset(2026, 12, 1, 8, 0, 0, TimeSpan.Zero)); // a Tuesday
     private ReminderConfig _settings = new() { SendAtHour = 9 };
 
@@ -24,6 +25,57 @@ public sealed class ReminderServiceTests
         _notifier.Setup(value => value.NotifyAsync(It.IsAny<NotificationMessage>(), It.IsAny<CancellationToken>()))
             .Callback<NotificationMessage, CancellationToken>((message, _) => _sent.Add(message))
             .Returns(Task.CompletedTask);
+        _detector.Setup(value => value.DetectAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+    }
+
+    [Fact]
+    public async Task SetCertificateRemindersAsync_SnoozeStopsTheDigestUntilItEnds()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        var service = CreateService();
+        var snoozedAt = _clock.Now;
+        await service.SetCertificateRemindersAsync("SHOP", ReminderMode.Snoozed, snoozeDays: 2);
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await service.CheckAsync();
+        _clock.Now = _clock.Now.AddDays(2);
+        await service.CheckAsync();
+
+        Assert.Single(_sent);
+        Assert.Equal(snoozedAt.AddDays(2), Assert.Single(await _certificates.GetAllAsync()).SnoozedUntil);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.SetCertificateRemindersAsync("Shop", ReminderMode.Snoozed, 0));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SetCertificateRemindersAsync("Unknown", ReminderMode.Off));
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_RejectsOutOfRangeValues()
+    {
+        var service = CreateService();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.SaveSettingsAsync(new ReminderConfig { StartDays = 0 }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.SaveSettingsAsync(new ReminderConfig { RepeatDays = 31 }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.SaveSettingsAsync(new ReminderConfig { SendAtHour = 24 }));
+    }
+
+    [Fact]
+    public async Task SendSampleAsync_SendsEvenWhenNothingIsDue_AndRecordsNothing()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 200));
+
+        await CreateService().SendSampleAsync();
+
+        Assert.StartsWith("SAMPLE:", Assert.Single(_sent).Body, StringComparison.Ordinal);
+        Assert.Null((await _state.GetAsync()).LastDigestDate);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ReportsCertificatesReplacedOutsideSslense()
+    {
+        _detector.Setup(value => value.DetectAsync(It.IsAny<CancellationToken>())).ReturnsAsync(["replaced"]);
+
+        var results = await CreateService().CheckAsync();
+
+        Assert.Equal("replaced", Assert.Single(results).Message);
     }
 
     [Fact]
@@ -126,7 +178,7 @@ public sealed class ReminderServiceTests
     {
         var config = new Mock<IConfigStore>(MockBehavior.Strict);
         config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => new AppConfig { Reminders = _settings });
-        return new ReminderService(_certificates, config.Object, Mock.Of<IRenewalService>(), _state, _notifier.Object, _clock);
+        return new ReminderService(_certificates, config.Object, Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
     }
 
     private ManagedCertificate Imported(int daysLeft) => new(

@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddTransient<IIisService, IisService>();
         services.AddTransient<IRenewalService, RenewalService>();
         services.AddTransient<IReminderService, ReminderService>();
+        services.AddTransient<IOutsideRenewalDetector, OutsideRenewalDetector>();
         services.AddSingleton<IReminderStateStore, JsonReminderStateStore>();
         services.AddSingleton<HttpClient>();
         services.AddSingleton<IRenewalInfoProvider, AcmeRenewalInfoProvider>();

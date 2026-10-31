@@ -34,6 +34,13 @@ public interface IManagedCertificateStore
         DateTimeOffset sentAt,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Sets whether the site's certificate is included in reminders. Returns false when the site is not managed.</summary>
+    Task<bool> SetReminderModeAsync(
+        string siteName,
+        ReminderMode mode,
+        DateTimeOffset? snoozedUntil,
+        CancellationToken cancellationToken = default);
+
     Task RemoveAsync(string siteName, CancellationToken cancellationToken = default);
 }
 

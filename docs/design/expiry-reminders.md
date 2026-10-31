@@ -60,7 +60,7 @@ When an automatic certificate enters the start window, today's digest includes o
 | Off until replaced | Not included | Yes, back to On |
 | Off permanently | Never included | No |
 
-Muted certificates are listed in a short "Not reminding" section at the end of any digest that is sent, so nothing is silently forgotten. Changed in the GUI (Dashboard column, Certificate Details) and the CLI (`SSLense.Cli reminders --site <site> --on | --snooze <days> | --off-until-replaced | --off`).
+Muted certificates are listed in a short "Not reminding" section at the end of any digest that is sent, so nothing is silently forgotten. Changed in the GUI (Dashboard column, Certificate Details) and the CLI (`SSLense.Cli reminders site --site <site> --mode on|snooze|off-until-replaced|off [--days N]`). A snooze lasts 1 to 90 days.
 
 ### 4.4 Weekly summary (optional)
 
@@ -70,7 +70,7 @@ When enabled, it is sent on the chosen day even if nothing needs attention. It s
 
 On each hourly check, for every managed certificate, SSLense looks at the site's HTTPS bindings on port 443 for its hosts. If all of them now use another certificate that is in `LocalMachine\My` with its private key, covers the hosts, and expires later:
 
-- **Imported certificate:** the record is updated (thumbprint, dates, issuer) and a "replaced outside SSLense" line is added to the next digest. The reminder setting resets unless it is Off permanently.
+- **Imported certificate:** at the next hourly check, the record is updated (thumbprint, dates, issuer), and a "replaced outside SSLense" notice is sent like a successful renewal: always to the Event Log, and to email and chat when success notifications are on. The reminder setting resets unless it is Off permanently.
 - **Automatic certificate:** the record is not changed, because the next renewal would put a Let's Encrypt certificate back. The digest and the health check report that the binding was changed outside SSLense, and suggest either adopting the new certificate or reissuing.
 
 ## 5. Data and configuration changes
@@ -88,7 +88,7 @@ Migrations follow the existing pattern: the old file is backed up first, and new
 - **Settings:** a new Reminders group (section 3) with **Send sample digest**, which sends today's digest as it would be sent, marked as a sample, without recording anything.
 - **Dashboard:** a Reminders column (On, Snoozed until D, Off until replaced, Off).
 - **Certificate Details:** the reminder setting, when the last reminder was sent, and the next expected one.
-- **CLI:** `reminders show`, `reminders set --start-days --repeat-days --send-at --notices on|off --weekly off|<day>`, `reminders --site ...` (section 4.3), `reminders preview` (prints the digest without sending it).
+- **CLI:** `reminders show`, `reminders set --start-days --repeat-days --send-at --notices on|off --weekly off|<day>`, `reminders site` (section 4.3), `reminders preview` (prints the digest without sending it), `reminders send-sample`.
 - **Health:** a check that reminders are configured and that at least one channel works.
 
 ## 7. Safety
@@ -102,7 +102,7 @@ Migrations follow the existing pattern: the old file is backed up first, and new
 | Step | Content |
 |---|---|
 | 1 | Data model and migrations; reminder settings; the digest builder (pure, fully unit-tested); digest scheduling in the service replacing the fixed imported schedule and the expiry-level emails. **Done.** The digest uses the existing Event Log IDs 1002 and 1003. |
-| 2 | Per-certificate reminder setting; detection of renewals made outside SSLense; CLI |
+| 2 | Per-certificate reminder setting; detection of renewals made outside SSLense; CLI. **Done.** |
 | 3 | GUI: Settings → Reminders with Send sample digest, Dashboard column, Certificate Details |
 | 4 | README, health check, release |
 
