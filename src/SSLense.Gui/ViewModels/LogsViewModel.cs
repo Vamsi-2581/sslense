@@ -31,6 +31,11 @@ public partial class LogsViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? statusMessage;
 
+    /// <summary>Entries written before this are hidden. Set by Clear view; the log file itself is never cleared.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsViewCleared))]
+    private DateTimeOffset? showSince;
+
     public LogsViewModel(ILogService logService, ILogger<LogsViewModel> logger)
     {
         _logService = logService;
@@ -38,6 +43,8 @@ public partial class LogsViewModel : ObservableObject, IDisposable
         _refreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsRefreshing);
         SaveCopyCommand = new AsyncRelayCommand(SaveCopyAsync);
         CopyCommand = new RelayCommand(Copy);
+        ClearViewCommand = new RelayCommand(() => ShowSince = DateTimeOffset.Now);
+        ShowAllCommand = new RelayCommand(() => ShowSince = null);
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _timer.Tick += OnTimerTick;
     }
@@ -52,6 +59,12 @@ public partial class LogsViewModel : ObservableObject, IDisposable
 
     public IRelayCommand CopyCommand { get; }
 
+    public IRelayCommand ClearViewCommand { get; }
+
+    public IRelayCommand ShowAllCommand { get; }
+
+    public bool IsViewCleared => ShowSince is not null;
+
     public void StartLiveUpdates()
     {
         if (!_timer.IsEnabled)
@@ -62,6 +75,12 @@ public partial class LogsViewModel : ObservableObject, IDisposable
     }
 
     partial void OnSelectedLevelChanged(string value) => _ = _refreshCommand.ExecuteAsync(null);
+
+    partial void OnShowSinceChanged(DateTimeOffset? value)
+    {
+        StatusMessage = value is null ? null : $"Showing entries from {value:HH:mm:ss}. The log file is kept; Show all brings back earlier entries.";
+        _ = _refreshCommand.ExecuteAsync(null);
+    }
 
     partial void OnIsRefreshingChanged(bool value) => _refreshCommand.NotifyCanExecuteChanged();
 
@@ -79,7 +98,7 @@ public partial class LogsViewModel : ObservableObject, IDisposable
         ErrorMessage = null;
         try
         {
-            var snapshot = await _logService.ReadCurrentAsync(SelectedLevel).ConfigureAwait(true);
+            var snapshot = await _logService.ReadCurrentAsync(SelectedLevel, since: ShowSince).ConfigureAwait(true);
             FilePath = snapshot.FilePath ?? "No log file found.";
             Lines.Clear();
             foreach (var line in snapshot.Lines)

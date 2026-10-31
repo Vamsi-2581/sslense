@@ -18,6 +18,8 @@
                 <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding SelectedLevel}"
                           Width="125" Margin="0,0,8,0" />
                 <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+                <Button Content="Clear view" Command="{Binding ClearViewCommand}" Margin="0,0,8,0" ToolTip="Hide everything logged so far and show only new entries. The log file itself is kept." />
+                <Button Content="Show all" Command="{Binding ShowAllCommand}" Margin="0,0,8,0" Visibility="{Binding IsViewCleared, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 <Button Content="Copy" Command="{Binding CopyCommand}" Margin="0,0,8,0" ToolTip="Copy the lines shown below, including stack traces, to paste into a GitHub issue or a message" />
                 <Button Content="Save copy to Desktop" Command="{Binding SaveCopyCommand}" Style="{StaticResource PrimaryButton}" ToolTip="The log folder is restricted to Administrators, so SSLense saves a copy you can open" />
             </StackPanel>

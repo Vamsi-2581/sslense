@@ -2,8 +2,8 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
  <UserControl.Resources><BooleanToVisibilityConverter x:Key="BoolToVisibility"/></UserControl.Resources>
- <ScrollViewer VerticalScrollBarVisibility="Auto">
-  <StackPanel>
+ <Grid>
+ <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
    <DockPanel Margin="0,0,0,18">
     <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding RefreshCommand}" VerticalAlignment="Top"/>
     <StackPanel>
@@ -12,9 +12,14 @@
     </StackPanel>
    </DockPanel>
 
-   <Border x:Name="ErrorBannerBorder" Margin="0,0,0,10"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource ErrorBanner}"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ErrorMessage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/></Border>
-   <Border x:Name="ResultBannerBorder" Margin="0,0,0,10"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource SuccessBanner}"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ResultMessage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding ResultMessage}" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/></Border>
+   <!-- Outside the scrolling area, so the outcome of a button far down the page is always visible. -->
+   <StackPanel Grid.Row="1">
+   <Border Margin="0,0,0,10"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource ErrorBanner}"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ErrorMessage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/></Border>
+   <Border Margin="0,0,0,10"><Border.Style><Style TargetType="Border" BasedOn="{StaticResource SuccessBanner}"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ResultMessage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding ResultMessage}" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/></Border>
+   </StackPanel>
 
+  <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+  <StackPanel>
    <GroupBox Header="1. Request a certificate" Margin="0,4,0,14"><StackPanel>
     <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,14"
                Text="Creates a certificate signing request (CSR) to paste into the provider's order form. The private key is created in Windows on this server, cannot be exported, and never leaves it."/>
@@ -107,5 +112,6 @@
     </Grid>
    </Border>
   </StackPanel>
- </ScrollViewer>
+  </ScrollViewer>
+ </Grid>
 </UserControl>

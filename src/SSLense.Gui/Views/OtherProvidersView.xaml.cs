@@ -31,13 +31,7 @@ public partial class OtherProvidersView : UserControl
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(OtherProvidersViewModel.PfxPassword) && ViewModel?.PfxPassword.Length == 0) PfxPasswordBox.Clear();
-        // The banners are at the top of a long page; without this, an outcome of an action further down goes unseen.
-        if (e.PropertyName == nameof(OtherProvidersViewModel.ErrorMessage) && ViewModel?.ErrorMessage is not null) ShowBanner(ErrorBannerBorder);
-        if (e.PropertyName == nameof(OtherProvidersViewModel.ResultMessage) && ViewModel?.ResultMessage is not null) ShowBanner(ResultBannerBorder);
     }
-
-    private void ShowBanner(FrameworkElement banner) =>
-        Dispatcher.BeginInvoke(() => banner.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);
 
     private void OnPfxPasswordChanged(object sender, RoutedEventArgs e)
     {

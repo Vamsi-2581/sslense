@@ -5,7 +5,8 @@ public interface ILogService
     Task<LogSnapshot> ReadCurrentAsync(
         string level,
         int maximumLines = 1000,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        DateTimeOffset? since = null);
 
     /// <summary>
     /// Copies today's log file into <paramref name="directory"/> and returns the copy's path. The log folder itself is

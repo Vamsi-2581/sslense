@@ -77,7 +77,7 @@ public sealed class CertificateManagementServiceTests
                 new IisBinding("https", "*", 443, "example.com", "ABC", "My", true)])
         ]);
         var logs = new Mock<ILogService>();
-        logs.Setup(value => value.ReadCurrentAsync("All", 10, It.IsAny<CancellationToken>()))
+        logs.Setup(value => value.ReadCurrentAsync("All", 10, It.IsAny<CancellationToken>(), null))
             .ReturnsAsync(new LogSnapshot("log", Enumerable.Range(1, 10).Select(value => $"line {value}").ToArray()));
         var service = new CertificateManagementService(managed.Object, certificates.Object, iis.Object, logs.Object);
 

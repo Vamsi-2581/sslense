@@ -200,8 +200,14 @@ public partial class SettingsViewModel : ObservableObject
         var results = await _notifier.TestAsync(ct).ConfigureAwait(true);
         foreach (var result in results) TestResults.Add(result);
         var failed = results.Count(result => !result.Succeeded);
-        ResultMessage = failed == 0 ? $"Test delivered through {results.Count} channel(s)." : string.Empty;
-        ErrorMessage = failed == 0 ? null : $"{failed} of {results.Count} channel(s) failed; see the results below.";
+        ResultMessage = failed == 0
+            ? $"Test delivered through {results.Count} channel(s): {string.Join(", ", results.Select(result => result.Channel))}."
+            : string.Empty;
+        // Shown in the banner, not only in the list under Options, which may be scrolled out of view.
+        ErrorMessage = failed == 0
+            ? null
+            : $"{failed} of {results.Count} channel(s) failed. " +
+              string.Join(" ", results.Where(result => !result.Succeeded).Select(result => $"{result.Channel}: {result.Message}"));
     }, token);
 
     private Task RefreshServiceAsync(CancellationToken token) => RunAsync(RefreshServiceCoreAsync, token);

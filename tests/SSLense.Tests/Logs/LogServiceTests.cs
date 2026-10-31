@@ -53,6 +53,23 @@ public sealed class LogServiceTests
     }
 
     [Fact]
+    public void Filter_Since_HidesEarlierEntriesWithTheirStackTraces()
+    {
+        string[] lines =
+        [
+            "2026-10-31 06:44:59.263 +00:00 [ERR] Could not initialize the issue wizard",
+            "System.Runtime.InteropServices.COMException (0x800710D8): The object identifier does not represent a valid object.",
+            "2026-10-31 07:14:32.510 +00:00 [ERR] Settings operation failed",
+            "System.ArgumentException: The sender address is not a valid email address."
+        ];
+
+        var since = new DateTimeOffset(2026, 10, 31, 9, 0, 0, TimeSpan.FromHours(2)); // 07:00 UTC
+
+        Assert.Equal(lines[2..], LogService.Filter(lines, "All", since));
+        Assert.Equal(lines[2..], LogService.Filter(lines, "Error", since));
+    }
+
+    [Fact]
     public async Task SaveCopyAsync_WritesTodaysLogToTheGivenFolder()
     {
         var fileSystem = new InMemoryFileSystem();
