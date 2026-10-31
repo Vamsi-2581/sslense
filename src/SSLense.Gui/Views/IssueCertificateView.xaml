@@ -23,7 +23,16 @@
     <StackPanel Visibility="{Binding IsStepOne, Converter={StaticResource BoolToVisibility}}">
      <TextBlock Text="Choose an IIS site" Style="{StaticResource SectionTitle}"/>
      <TextBlock Text="Select the website and host names SSLense should secure." Style="{StaticResource PageSubtitle}" Margin="0,4,0,20"/>
-     <TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}" DisplayMemberPath="Name" Margin="0,0,0,20"/>
+     <TextBlock Text="IIS SITE" Style="{StaticResource FieldLabel}"/><ComboBox ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}" DisplayMemberPath="DisplayName" Margin="0,0,0,10"/>
+     <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,10" Visibility="{Binding SelectedSite.HasHttps, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}">
+      <StackPanel>
+       <TextBlock Text="This site already serves HTTPS" FontWeight="SemiBold"/>
+       <TextBlock Text="{Binding SelectedSite.HttpsSummary}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+       <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"
+                  Text="Issuing replaces that certificate for the host names you select, for example to move from a paid certificate to Let's Encrypt. To keep it and only get expiry reminders, adopt it on the Other Providers page instead."/>
+      </StackPanel>
+     </Border>
+     <Border Height="10"/>
      <TextBlock Text="HOST NAMES" Style="{StaticResource FieldLabel}"/>
      <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="12,7">
      <ItemsControl ItemsSource="{Binding Hosts}"><ItemsControl.ItemTemplate><DataTemplate>

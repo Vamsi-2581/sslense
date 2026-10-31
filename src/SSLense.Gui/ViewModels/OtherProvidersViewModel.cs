@@ -90,7 +90,18 @@ public partial class OtherProvidersViewModel : ObservableObject
     public string SuggestedCsrFileName =>
         SelectedPending is { } pending ? $"sslense-{pending.Request.Hosts[0].Replace('*', '_')}-{pending.Created:yyyyMMdd}.csr" : "request.csr";
 
-    public Task InitializeAsync() => _refreshCommand.ExecuteAsync(null);
+    /// <param name="replaceSite">A site whose imported certificate is due: preselected for a new request.</param>
+    public async Task InitializeAsync(string? replaceSite = null)
+    {
+        await _refreshCommand.ExecuteAsync(null);
+        if (replaceSite is not null && Sites.FirstOrDefault(site =>
+                string.Equals(site.Name, replaceSite, StringComparison.OrdinalIgnoreCase)) is { } site)
+        {
+            RequestSite = site;
+            ResultMessage = $"To replace the certificate for '{site.Name}', create a request below and submit it to your " +
+                            "certificate provider as a renewal or reissue. When the new certificate arrives, complete the request.";
+        }
+    }
 
     public async Task SaveCsrAsync(string path)
     {

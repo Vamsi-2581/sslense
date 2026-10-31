@@ -32,6 +32,18 @@ internal sealed class PhysicalFileSystem : IFileSystem
         return [.. lines];
     }
 
+    public async Task TruncateAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete,
+            1,
+            FileOptions.Asynchronous);
+        stream.SetLength(0);
+    }
+
     public IReadOnlyList<string> GetFiles(string path, string searchPattern) =>
         Directory.Exists(path) ? Directory.GetFiles(path, searchPattern) : [];
 

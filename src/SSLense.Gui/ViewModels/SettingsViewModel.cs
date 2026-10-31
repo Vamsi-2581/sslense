@@ -41,7 +41,6 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool eventLogEnabled = true;
     [ObservableProperty] private bool notifyOnSuccess;
 
-    [ObservableProperty] private string servicePath = Path.Combine(AppContext.BaseDirectory, "SSLense.Service.exe");
     [ObservableProperty] private string serviceStatus = "Checking...";
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private string? errorMessage;
@@ -73,10 +72,9 @@ public partial class SettingsViewModel : ObservableObject
             ct => _notificationSettingsService.SetOptionsAsync(EventLogEnabled, NotifyOnSuccess, ct), "Notification options saved.", token));
         TestNotificationCommand = Command(TestNotificationAsync);
         RefreshServiceCommand = Command(RefreshServiceAsync);
-        InstallServiceCommand = Command(InstallServiceAsync);
         StartServiceCommand = Command(StartServiceAsync);
         StopServiceCommand = Command(StopServiceAsync);
-        UninstallServiceCommand = Command(UninstallServiceAsync);
+        RestartServiceCommand = Command(RestartServiceAsync);
     }
 
     public IReadOnlyList<EmailPreset> EmailPresets => EmailPreset.All;
@@ -97,10 +95,9 @@ public partial class SettingsViewModel : ObservableObject
     public IAsyncRelayCommand SaveOptionsCommand { get; }
     public IAsyncRelayCommand TestNotificationCommand { get; }
     public IAsyncRelayCommand RefreshServiceCommand { get; }
-    public IAsyncRelayCommand InstallServiceCommand { get; }
     public IAsyncRelayCommand StartServiceCommand { get; }
     public IAsyncRelayCommand StopServiceCommand { get; }
-    public IAsyncRelayCommand UninstallServiceCommand { get; }
+    public IAsyncRelayCommand RestartServiceCommand { get; }
 
     public async Task InitializeAsync()
     {
@@ -200,15 +197,25 @@ public partial class SettingsViewModel : ObservableObject
         var results = await _notifier.TestAsync(ct).ConfigureAwait(true);
         foreach (var result in results) TestResults.Add(result);
         var failed = results.Count(result => !result.Succeeded);
-        ResultMessage = failed == 0 ? $"Test delivered through {results.Count} channel(s)." : string.Empty;
-        ErrorMessage = failed == 0 ? null : $"{failed} of {results.Count} channel(s) failed; see the results below.";
+        ResultMessage = failed == 0
+            ? $"Test delivered through {results.Count} channel(s): {string.Join(", ", results.Select(result => result.Channel))}."
+            : string.Empty;
+        // Shown in the banner, not only in the list under Options, which may be scrolled out of view.
+        ErrorMessage = failed == 0
+            ? null
+            : $"{failed} of {results.Count} channel(s) failed. " +
+              string.Join(" ", results.Where(result => !result.Succeeded).Select(result => $"{result.Channel}: {result.Message}"));
     }, token);
 
     private Task RefreshServiceAsync(CancellationToken token) => RunAsync(RefreshServiceCoreAsync, token);
-    private Task InstallServiceAsync(CancellationToken token) => ServiceActionAsync(ct => _serviceManager.InstallAsync(ServicePath, ct), "Service installed and started.", token);
     private Task StartServiceAsync(CancellationToken token) => ServiceActionAsync(_serviceManager.StartAsync, "Service started.", token);
     private Task StopServiceAsync(CancellationToken token) => ServiceActionAsync(_serviceManager.StopAsync, "Service stopped.", token);
-    private Task UninstallServiceAsync(CancellationToken token) => ServiceActionAsync(_serviceManager.UninstallAsync, "Service uninstalled.", token);
+    // The installer registers and starts the service; these are for troubleshooting, e.g. after changing settings by hand.
+    private Task RestartServiceAsync(CancellationToken token) => ServiceActionAsync(async ct =>
+    {
+        await _serviceManager.StopAsync(ct).ConfigureAwait(true);
+        await _serviceManager.StartAsync(ct).ConfigureAwait(true);
+    }, "Service restarted.", token);
 
     private Task ServiceActionAsync(Func<CancellationToken, Task> action, string message, CancellationToken token) => RunAsync(async ct =>
     {
@@ -234,8 +241,7 @@ public partial class SettingsViewModel : ObservableObject
         (AsyncRelayCommand)SaveGeneralCommand, (AsyncRelayCommand)SaveEmailCommand, (AsyncRelayCommand)RemoveEmailCommand,
         (AsyncRelayCommand)AddChatCommand, (AsyncRelayCommand)RemoveChatCommand, (AsyncRelayCommand)SaveHeartbeatCommand,
         (AsyncRelayCommand)RemoveHeartbeatCommand, (AsyncRelayCommand)SaveOptionsCommand, (AsyncRelayCommand)TestNotificationCommand,
-        (AsyncRelayCommand)RefreshServiceCommand, (AsyncRelayCommand)InstallServiceCommand,
-        (AsyncRelayCommand)StartServiceCommand, (AsyncRelayCommand)StopServiceCommand,
-        (AsyncRelayCommand)UninstallServiceCommand
+        (AsyncRelayCommand)RefreshServiceCommand, (AsyncRelayCommand)RestartServiceCommand,
+        (AsyncRelayCommand)StartServiceCommand, (AsyncRelayCommand)StopServiceCommand
     ];
 }

@@ -24,8 +24,16 @@ internal sealed class InMemoryFileSystem : IFileSystem
     public IReadOnlyList<string> GetFiles(string path, string searchPattern) =>
         Files.Keys.Where(key => key.StartsWith(path, StringComparison.OrdinalIgnoreCase)).ToArray();
 
+    /// <summary>Writes to paths starting with this fail, as on a full disk.</summary>
+    public string? FailWritesUnder { get; set; }
+
     public Task WriteAllTextAsync(string path, string contents, CancellationToken cancellationToken)
     {
+        if (FailWritesUnder is not null && path.StartsWith(FailWritesUnder, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IOException("There is not enough space on the disk.");
+        }
+
         Files[path] = contents;
         return Task.CompletedTask;
     }
@@ -40,6 +48,12 @@ internal sealed class InMemoryFileSystem : IFileSystem
         Task.FromResult<IAsyncDisposable>(new Scope());
 
     public IAsyncDisposable? TryAcquireExclusiveFileLock(string path) => new Scope();
+
+    public Task TruncateAsync(string path, CancellationToken cancellationToken)
+    {
+        Files[path] = string.Empty;
+        return Task.CompletedTask;
+    }
 
     public void DeleteFile(string path) => Files.Remove(path);
 

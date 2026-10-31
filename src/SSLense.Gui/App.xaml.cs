@@ -23,11 +23,7 @@ public partial class App : Application
 
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
-            .WriteTo.File(
-                Path.Combine(AppPaths.LogDirectory, "sslense-.log"),
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 30,
-                shared: true)
+            .WriteTo.SSLenseLogFile()
             .CreateLogger();
         foreach (var warning in securityWarnings)
         {

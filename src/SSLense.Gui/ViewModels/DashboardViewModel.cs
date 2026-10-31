@@ -35,6 +35,10 @@ public partial class DashboardViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasHealthAlert))]
     private string? healthAlertTitle;
 
+    /// <summary>Quick health result for the window header: Checking, Ok, Warning, Fail, or Unknown.</summary>
+    [ObservableProperty]
+    private string healthState = "Checking";
+
     [ObservableProperty]
     private string? healthAlertDetails;
 
@@ -55,8 +59,12 @@ public partial class DashboardViewModel : ObservableObject
         IssueNewCommand = new RelayCommand(() => _navigation.Navigate("Issue"), () => !IsBusy);
         OpenHealthCommand = new RelayCommand(() => _navigation.Navigate("Health"));
         ViewDetailsCommand = new RelayCommand(
-            () => _navigation.Navigate("Details", SelectedCertificate?.SiteName),
-            CanRenewSelected);
+            () => _navigation.Navigate("Certificate Details", SelectedCertificate?.SiteName),
+            () => !IsBusy && SelectedCertificate is not null);
+        OrderReplacementCommand = new RelayCommand(
+            () => _navigation.Navigate("Other Providers", SelectedCertificate?.SiteName),
+            () => !IsBusy && SelectedCertificate?.IsImported == true);
+        ProgressLines.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasProgress));
     }
 
     public ObservableCollection<CertificateRowViewModel> Certificates { get; } = [];
@@ -84,13 +92,28 @@ public partial class DashboardViewModel : ObservableObject
     public bool HasHealthAlert => HealthAlertTitle is not null;
     public IRelayCommand ViewDetailsCommand { get; }
 
+    /// <summary>An imported certificate is replaced by ordering a new one from its provider, not renewed here.</summary>
+    public IRelayCommand OrderReplacementCommand { get; }
+
+    public IRelayCommand ClearProgressCommand => new RelayCommand(ProgressLines.Clear);
+
+    public bool HasProgress => ProgressLines.Count > 0;
+
+    public bool ShowActivity => IsBusy || !string.IsNullOrEmpty(ErrorMessage);
+
+    public bool SelectedIsImported => SelectedCertificate?.IsImported == true;
+
     public Task InitializeAsync() => _refreshCommand.ExecuteAsync(null);
 
     partial void OnSelectedCertificateChanged(CertificateRowViewModel? value) =>
         NotifySelectionCommands();
 
+    partial void OnErrorMessageChanged(string? value) => OnPropertyChanged(nameof(ShowActivity));
+
     partial void OnIsBusyChanged(bool value)
     {
+        OnPropertyChanged(nameof(ShowActivity));
+        (OrderReplacementCommand as RelayCommand)?.NotifyCanExecuteChanged();
         _refreshCommand.NotifyCanExecuteChanged();
         _renewSelectedCommand.NotifyCanExecuteChanged();
         _renewAllCommand.NotifyCanExecuteChanged();
@@ -180,7 +203,7 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         Activity = statuses.Count == 0
-            ? "No managed certificates yet. Issue your first certificate to begin monitoring."
+            ? "No managed certificates yet. Issue a Let's Encrypt certificate, or adopt existing certificates on the Other Providers page."
             : $"Loaded {statuses.Count} managed certificate(s).";
         OnPropertyChanged(nameof(TotalCount));
         OnPropertyChanged(nameof(HealthyCount));
@@ -207,11 +230,13 @@ public partial class DashboardViewModel : ObservableObject
                 : problems[0].Status == HealthStatus.Fail
                     ? $"{problems.Length} health problem(s) need attention"
                     : $"{problems.Length} health warning(s)";
+            HealthState = problems.Length == 0 ? "Ok" : problems[0].Status == HealthStatus.Fail ? "Fail" : "Warning";
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // The banner is advisory; the certificate list above has already loaded.
             _logger.LogWarning(exception, "Quick health check failed");
+            HealthState = "Unknown";
         }
     }
 
@@ -237,7 +262,7 @@ public partial class DashboardViewModel : ObservableObject
 
     private bool CanRun() => !IsBusy;
 
-    private bool CanRenewSelected() => !IsBusy && SelectedCertificate is not null;
+    private bool CanRenewSelected() => !IsBusy && SelectedCertificate is { IsImported: false };
 
     private bool CanRenewAll() => !IsBusy && Certificates.Count > 0;
 
@@ -254,5 +279,7 @@ public partial class DashboardViewModel : ObservableObject
     {
         _renewSelectedCommand.NotifyCanExecuteChanged();
         (ViewDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OrderReplacementCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(SelectedIsImported));
     }
 }

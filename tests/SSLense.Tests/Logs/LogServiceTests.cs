@@ -15,6 +15,7 @@ public sealed class LogServiceTests
         var fileSystem = new Mock<IFileSystem>(MockBehavior.Strict);
         fileSystem.Setup(value => value.GetFiles(AppPaths.LogDirectory, "sslense-*.log"))
             .Returns([oldFile, currentFile]);
+        fileSystem.Setup(value => value.GetFiles(LogService.BackupDirectory, "sslense-*.log")).Returns([]);
         fileSystem.Setup(value => value.ReadAllLinesAsync(currentFile, It.IsAny<CancellationToken>()))
             .ReturnsAsync([
                 "[20:00:00 INF] Information",
@@ -32,5 +33,122 @@ public sealed class LogServiceTests
             Assert.True(line.Contains(" ERR]", StringComparison.Ordinal) ||
                         line.Contains(" FTL]", StringComparison.Ordinal)));
         fileSystem.VerifyAll();
+    }
+
+    [Fact]
+    public void Filter_RealFileFormat_KeepsStackTracesWithTheirEntry()
+    {
+        string[] lines =
+        [
+            "2026-10-31 10:00:00.100 +00:00 [INF] Started",
+            "2026-10-31 10:00:01.200 +00:00 [ERR] Dashboard operation failed",
+            "System.Security.Cryptography.CryptographicException: The object identifier does not represent a valid object.",
+            "   at SSLense.Core.Certificates.CertificateInspector.GetDnsNames(X509Certificate2 certificate)",
+            "2026-10-31 10:00:02.300 +00:00 [WRN] Slow",
+            "   continuation of the warning"
+        ];
+
+        Assert.Equal(lines[1..4], LogService.Filter(lines, "Error"));
+        Assert.Equal(lines[4..], LogService.Filter(lines, "Warning"));
+        Assert.Equal(lines, LogService.Filter(lines, "All"));
+    }
+
+    [Fact]
+    public void Filter_Search_KeepsWholeEntriesThatMentionIt()
+    {
+        string[] lines =
+        [
+            "2026-10-31 06:44:59.263 +00:00 [ERR] Could not initialize the issue wizard",
+            "System.Runtime.InteropServices.COMException (0x800710D8): The object identifier does not represent a valid object.",
+            "2026-10-31 07:14:32.510 +00:00 [ERR] Settings operation failed",
+            "System.ArgumentException: The sender address is not a valid email address."
+        ];
+
+        // The match is in the stack trace; the entry's first line comes with it.
+        Assert.Equal(lines[..2], LogService.Filter(lines, "Error", "0X800710d8"));
+        Assert.Empty(LogService.Filter(lines, "Warning", "sender"));
+    }
+
+    [Fact]
+    public async Task SaveCopyAsync_WritesTheLogToTheGivenFolder()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        var log = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        fileSystem.Files[log] = "2026-10-31 10:00:00.100 +00:00 [INF] Started\n";
+
+        var copy = await new LogService(fileSystem).SaveCopyAsync(log, @"C:\Users\admin\Desktop");
+
+        Assert.StartsWith(@"C:\Users\admin\Desktop\sslense-20261031-", copy, StringComparison.Ordinal);
+        Assert.Contains("[INF] Started", fileSystem.Files[copy], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ClearCurrentAsync_EmptiesTodaysLogAndKeepsABackupOutsideTheDailyFiles()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        var older = Path.Combine(AppPaths.LogDirectory, "sslense-20261030.log");
+        var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        fileSystem.Files[older] = "old\n";
+        fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] Before clearing\n";
+        var locked = 0;
+        var service = new LogService(fileSystem, operation =>
+        {
+            locked++;
+            return operation();
+        });
+
+        var backup = await service.ClearCurrentAsync();
+
+        Assert.Equal(string.Empty, fileSystem.Files[today]);
+        Assert.Equal("old\n", fileSystem.Files[older]);
+        Assert.Equal(LogService.BackupDirectory, Path.GetDirectoryName(backup));
+        Assert.Contains("Before clearing", fileSystem.Files[backup!], StringComparison.Ordinal);
+        var files = service.ListFiles();
+        Assert.Equal([today, older, backup], files.Select(file => file.Path));
+        Assert.True(files[2].IsBackup);
+        Assert.Null(await service.ClearCurrentAsync());
+        Assert.Equal(2, locked);
+    }
+
+    [Fact]
+    public async Task ClearCurrentAsync_TwiceInTheSameSecond_KeepsBothBackups()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        var service = new LogService(fileSystem, operation => operation());
+        fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] First\n";
+        var first = await service.ClearCurrentAsync();
+        fileSystem.Files[today] = "2026-10-31 10:00:00.200 +00:00 [INF] Log cleared from the GUI\n";
+
+        // Same second in practice; if the clock ticks over in between, the names differ anyway.
+        var second = await service.ClearCurrentAsync();
+
+        Assert.NotEqual(first, second);
+        Assert.Contains("First", fileSystem.Files[first!], StringComparison.Ordinal);
+        Assert.Contains("Log cleared", fileSystem.Files[second!], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ClearCurrentAsync_BackupFails_LeavesTheLogAsItWas()
+    {
+        var fileSystem = new InMemoryFileSystem { FailWritesUnder = LogService.BackupDirectory };
+        var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] Keep me\n";
+
+        await Assert.ThrowsAsync<IOException>(() => new LogService(fileSystem, operation => operation()).ClearCurrentAsync());
+
+        Assert.Contains("Keep me", fileSystem.Files[today], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReadAsync_RefusesFilesThatAreNotSslenseLogs()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.Files[@"C:\ProgramData\SSLense\config.json"] = "{}";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new LogService(fileSystem).ReadAsync(@"C:\ProgramData\SSLense\config.json", "All", null, 100));
+
+        Assert.Contains("not an SSLense log file", exception.Message, StringComparison.Ordinal);
     }
 }

@@ -5,27 +5,69 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <DockPanel Margin="0,0,0,18">
-            <StackPanel DockPanel.Dock="Left">
-                <TextBlock Text="Activity logs" Style="{StaticResource PageTitle}" />
-                <TextBlock Text="Inspect live application activity and troubleshoot certificate operations." Style="{StaticResource PageSubtitle}" />
+        <DockPanel Margin="0,0,0,16">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <Button Content="Copy all" Command="{Binding CopyAllCommand}" Margin="0,0,8,0"
+                        ToolTip="Copy every entry shown below. To copy part of the log, select it and press Ctrl+C." />
+                <Button Content="Save copy to Desktop" Command="{Binding SaveCopyCommand}" Margin="0,0,8,0"
+                        ToolTip="The log folder is restricted to Administrators, so SSLense saves a copy you can open or attach." />
+                <Button Content="Clear log" Click="OnClearLogClick" Style="{StaticResource DangerButton}"
+                        IsEnabled="{Binding IsTodaySelected}"
+                        ToolTip="Empty today's log so it shows only what happens next. The earlier entries are kept as a backup." />
             </StackPanel>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                <TextBlock Text="LEVEL" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding SelectedLevel}"
-                          Width="125" Margin="0,0,8,0" />
-                <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
-                <Button Content="Open log folder" Command="{Binding OpenFolderCommand}" Style="{StaticResource PrimaryButton}" />
+            <StackPanel>
+                <TextBlock Text="Activity logs" Style="{StaticResource PageTitle}" />
+                <TextBlock Text="What SSLense, its service, and the CLI did. Select text to copy it, or clear the log before reproducing a problem."
+                           Style="{StaticResource PageSubtitle}" TextWrapping="Wrap" />
             </StackPanel>
         </DockPanel>
 
-        <Border Grid.Row="1" Style="{StaticResource InfoBanner}" Margin="0,0,0,12"><StackPanel><TextBlock Text="{Binding FilePath}" Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" /></StackPanel></Border>
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="14,10" Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" /><ColumnDefinition Width="260" />
+                    <ColumnDefinition Width="Auto" /><ColumnDefinition Width="130" />
+                    <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="FILE" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" DisplayMemberPath="Label"
+                          Margin="0,0,16,0" AutomationProperties.Name="Log file" />
+                <TextBlock Grid.Column="2" Text="LEVEL" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <ComboBox Grid.Column="3" ItemsSource="{Binding Levels}" SelectedItem="{Binding SelectedLevel}" Margin="0,0,16,0"
+                          AutomationProperties.Name="Level" ToolTip="Error also shows each error's stack trace." />
+                <TextBlock Grid.Column="4" Text="SEARCH" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox Grid.Column="5" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Margin="0,0,16,0"
+                         AutomationProperties.Name="Search" ToolTip="Show only entries containing this text, such as a site or host name." />
+                <CheckBox Grid.Column="6" Content="Live" IsChecked="{Binding IsLive}" VerticalAlignment="Center" Margin="0,0,12,0"
+                          ToolTip="Update every two seconds. Updates also pause while text is selected." />
+                <Button Grid.Column="7" Content="Refresh" Command="{Binding RefreshCommand}" />
+            </Grid>
+        </Border>
 
-        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" ClipToBounds="True">
-            <ListBox ItemsSource="{Binding Lines}" Style="{StaticResource ConsoleList}" />
+        <StackPanel Grid.Row="2" Margin="2,0,0,8">
+            <TextBlock Text="{Binding Summary}" Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Border Grid.Row="3" CornerRadius="10" ClipToBounds="True" Background="#0F172A">
+            <Grid>
+                <!-- A read-only text box rather than a list, so any part of the log can be selected and copied. -->
+                <TextBox x:Name="LogText" Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" IsReadOnlyCaretVisible="True"
+                         Background="Transparent" Foreground="#DCE7F5" BorderThickness="0" Padding="12" MinHeight="0"
+                         VerticalContentAlignment="Top" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                         TextWrapping="NoWrap" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         SelectionBrush="#3B82F6" SelectionChanged="OnLogSelectionChanged" TextChanged="OnLogTextChanged"
+                         ScrollViewer.ScrollChanged="OnLogScrollChanged" AutomationProperties.Name="Log entries" />
+                <TextBlock Text="{Binding EmptyMessage}" Foreground="#94A3B8" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsHitTestVisible="False" TextWrapping="Wrap" />
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

@@ -49,6 +49,11 @@ public partial class MainViewModel : ObservableObject
 
     public IReadOnlyList<NavigationItem> Pages { get; }
 
+    /// <summary>Source of the header status, which shows the quick health result the Dashboard keeps current.</summary>
+    public DashboardViewModel Dashboard => _dashboard;
+
+    public CommunityToolkit.Mvvm.Input.IRelayCommand OpenHealthCommand => _dashboard.OpenHealthCommand;
+
     public async Task InitializeAsync()
     {
         await _dashboard.InitializeAsync();
@@ -82,7 +87,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (ReferenceEquals(page.ViewModel, _dashboard)) await _dashboard.InitializeAsync();
         else if (ReferenceEquals(page.ViewModel, _issue)) await _issue.InitializeAsync();
-        else if (ReferenceEquals(page.ViewModel, _otherProviders)) await _otherProviders.InitializeAsync();
+        else if (ReferenceEquals(page.ViewModel, _otherProviders)) await _otherProviders.InitializeAsync(context);
         else if (ReferenceEquals(page.ViewModel, _details)) await _details.InitializeAsync(context);
         else if (ReferenceEquals(page.ViewModel, _settings)) await _settings.InitializeAsync();
     }
