@@ -3,7 +3,10 @@ using SSLense.Core.Config;
 
 namespace SSLense.Core.Logs;
 
-internal sealed partial class LogService(IFileSystem fileSystem) : ILogService
+/// <param name="exclusive">Runs an operation under <see cref="LogFileLock"/>; replaced in tests.</param>
+internal sealed partial class LogService(
+    IFileSystem fileSystem,
+    Func<Func<Task<string?>>, Task<string?>>? exclusive = null) : ILogService
 {
     /// <summary>Backups of cleared logs kept; older ones are deleted when a log is cleared again.</summary>
     internal const int BackupsKept = 20;
@@ -61,23 +64,54 @@ internal sealed partial class LogService(IFileSystem fileSystem) : ILogService
         var file = FindCurrentFile()
             ?? throw new InvalidOperationException($"There is no log file in '{AppPaths.LogDirectory}' yet.");
 
-        // One handle reads and empties the file; SSLense processes append at the end, so they continue in the empty file.
-        var contents = await fileSystem.TakeAllTextAsync(file, cancellationToken).ConfigureAwait(false);
-        if (contents.Length == 0)
-        {
-            return null;
-        }
+        // Every SSLense process writes the log under the same lock, so no entry can arrive between reading and emptying.
+        var backup = await (exclusive ?? DefaultExclusive)(async () =>
+            {
+                var lines = await fileSystem.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
+                if (lines.All(string.IsNullOrEmpty))
+                {
+                    return null;
+                }
 
-        fileSystem.CreateDirectory(BackupDirectory);
-        var backup = Path.Combine(BackupDirectory, $"{Path.GetFileNameWithoutExtension(file)}-cleared-{DateTime.Now:HHmmss}.log");
-        await fileSystem.WriteAllTextAsync(backup, contents, CancellationToken.None).ConfigureAwait(false);
-        foreach (var old in Backups().Skip(BackupsKept))
+                // The backup is written first: if that fails, the log is left as it was.
+                fileSystem.CreateDirectory(BackupDirectory);
+                var path = UniqueBackupPath(file);
+                await fileSystem.WriteAllTextAsync(path, string.Join(Environment.NewLine, lines) + Environment.NewLine, cancellationToken)
+                    .ConfigureAwait(false);
+                await fileSystem.TruncateAsync(file, CancellationToken.None).ConfigureAwait(false);
+                return path;
+            })
+            .ConfigureAwait(false);
+
+        if (backup is not null)
         {
-            fileSystem.DeleteFile(old);
+            foreach (var old in Backups().Skip(BackupsKept))
+            {
+                fileSystem.DeleteFile(old);
+            }
         }
 
         return backup;
     }
+
+    /// <summary>
+    /// A name no earlier backup uses: two clears in the same second (for example from two windows) must not overwrite
+    /// each other's backup. Clears run one at a time under the log lock, so checking first is enough.
+    /// </summary>
+    private string UniqueBackupPath(string file)
+    {
+        var name = $"{Path.GetFileNameWithoutExtension(file)}-cleared-{DateTime.Now:HHmmss}";
+        var path = Path.Combine(BackupDirectory, $"{name}.log");
+        for (var attempt = 2; fileSystem.FileExists(path); attempt++)
+        {
+            path = Path.Combine(BackupDirectory, $"{name}-{attempt}.log");
+        }
+
+        return path;
+    }
+
+    private static Task<string?> DefaultExclusive(Func<Task<string?>> operation) =>
+        LogFileLock.RunExclusiveAsync(operation, TimeSpan.FromSeconds(10));
 
     /// <summary>
     /// Keeps the entries of the chosen level that contain <paramref name="search"/>. An exception's stack trace follows

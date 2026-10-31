@@ -1,3 +1,4 @@
+using SSLense;
 using SSLense.Core;
 using SSLense.Core.Acme;
 using SSLense.Core.Config;
@@ -25,11 +26,7 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Logger(console => console
         .Filter.ByIncludingOnly(logEvent => logEvent.Level == LogEventLevel.Warning)
         .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}"))
-    .WriteTo.File(
-        Path.Combine(AppPaths.LogDirectory, "sslense-.log"),
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 30,
-        shared: true)
+    .WriteTo.SSLenseLogFile()
     .CreateLogger();
 
 foreach (var warning in securityWarnings)
