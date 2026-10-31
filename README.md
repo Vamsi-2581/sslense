@@ -200,7 +200,19 @@ Once a day (from 09:00 server time by default) the service sends one digest to e
 - an automatic renewal that is failing or overdue;
 - an expired certificate.
 
-Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. Renewal failures are still sent immediately as they happen. The settings and the per-certificate controls (snooze, off until replaced, off permanently) are described in [docs/design/expiry-reminders.md](docs/design/expiry-reminders.md).
+Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. Renewal failures are still sent immediately as they happen, even for a certificate whose reminders are off. A certificate from another provider that is replaced outside SSLense, for example through IIS Manager, is noticed within the hour and its reminders stop.
+
+In the app, the settings are under **Settings → Reminders** (with **Send sample digest**), the Dashboard has a **Reminders** column, and **Certificate Details** turns reminders on, snoozes them for 7 or 30 days, or turns them off until the certificate is replaced or permanently. From the CLI:
+
+```powershell
+SSLense.Cli reminders show                                     # settings and each certificate's state
+SSLense.Cli reminders set --start-days 45 --repeat-days 2 --send-at 8 --weekly monday
+SSLense.Cli reminders site --site "Shop" --mode snooze --days 7  # or on, off-until-replaced, off
+SSLense.Cli reminders preview                                  # print today's digest without sending it
+SSLense.Cli reminders send-sample                              # send it, marked as a sample
+```
+
+The design is in [docs/design/expiry-reminders.md](docs/design/expiry-reminders.md).
 
 ### Event Log IDs
 
@@ -287,7 +299,7 @@ Windows displays an administrator elevation prompt because the application manif
 - A visual three-step issuance wizard with IIS selection, guarded environment choice, pre-flight checks, live progress, and cancellation
 - Certificate details, renewal, confirmed removal, bindings, issuer, validity, and recent logs
 - An **Other Providers** page for certificates bought elsewhere: create a request (CSR) to copy or save, complete it with the issued certificate and bundle, import a PFX, or adopt a certificate already bound in IIS. Imported certificates show as "Imported" on the Dashboard, with "Order renewal" when 30 days or fewer remain
-- General, SMTP/webhook, and Windows Service settings
+- General, notification, reminder, and Windows Service settings; per-certificate reminders on Certificate Details
 
 Staging remains the wizard default. Production requires a separate selection and acknowledgement before the Issue button is enabled. Use **Issue certificate** on the Dashboard to open the wizard. Removing a certificate requires confirmation and removes only matching HTTPS bindings; a certificate still used by another IIS site is retained in the Windows certificate store.
 

@@ -104,7 +104,7 @@ Migrations follow the existing pattern: the old file is backed up first, and new
 | 1 | Data model and migrations; reminder settings; the digest builder (pure, fully unit-tested); digest scheduling in the service replacing the fixed imported schedule and the expiry-level emails. **Done.** The digest uses the existing Event Log IDs 1002 and 1003. |
 | 2 | Per-certificate reminder setting; detection of renewals made outside SSLense; CLI. **Done.** |
 | 3 | GUI: Settings → Reminders with Send sample digest, Dashboard column, Certificate Details. **Done.** |
-| 4 | README, health check, release |
+| 4 | README, health check, release. **Done** (0.11.0). The health check's Reminders entry warns when a certificate with reminders off or snoozed expires within 7 days. |
 
 ## 9. Decisions
 

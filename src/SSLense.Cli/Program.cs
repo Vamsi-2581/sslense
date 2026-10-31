@@ -250,7 +250,7 @@ static RootCommand CreateRootCommand(IServiceProvider services)
     rootCommand.Subcommands.Add(removeCommand);
 
     var settingsEmailOption = new Option<string?>("--email") { Description = "Default ACME account email." };
-    var settingsDaysOption = new Option<int>("--renewal-days") { Required = true, Description = "Renewal threshold, 1-89 days." };
+    var settingsDaysOption = new Option<int>("--renewal-days") { Required = true, Description = "Let's Encrypt fallback schedule when the CA offers no renewal window (ARI), 1-89 days, capped at a third of the lifetime. Reminders are set with 'reminders set'." };
     var configureCommand = new Command("configure", "Save general defaults and renewal settings.");
     configureCommand.Options.Add(settingsEmailOption); configureCommand.Options.Add(settingsDaysOption);
     configureCommand.SetAction((result, token) => ConfigureGeneralAsync(

@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Single product version for every app and the MSI. Increase it for each release so MSI upgrades apply. -->
-    <Version>0.10.5</Version>
+    <Version>0.11.0</Version>
 
     <!--
       Publisher shown in file properties, Add/Remove Programs, and the MSI. When releases are
