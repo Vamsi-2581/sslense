@@ -146,19 +146,28 @@ public partial class LogsViewModel : ObservableObject, IDisposable
         }
 
         var selectedPath = SelectedFile?.File.Path;
-        Files.Clear();
-        for (var index = 0; index < files.Count; index++)
-        {
-            var file = files[index];
-            var label = file.IsBackup
-                ? $"Cleared backup: {file.Name}"
-                : index == 0 ? $"Today: {file.Name}" : file.Name;
-            Files.Add(new LogFileOption(file, label));
-        }
 
+        // Clearing the list makes the ComboBox reset the selection, which would start a second refresh in the middle of
+        // this one; both then added every file, so each name appeared twice. The guard covers the whole rebuild.
         _selectingFile = true;
-        SelectedFile = Files.FirstOrDefault(option => option.File.Path == selectedPath) ?? Files.FirstOrDefault();
-        _selectingFile = false;
+        try
+        {
+            Files.Clear();
+            for (var index = 0; index < files.Count; index++)
+            {
+                var file = files[index];
+                var label = file.IsBackup
+                    ? $"Cleared backup: {file.Name}"
+                    : index == 0 ? $"Today: {file.Name}" : file.Name;
+                Files.Add(new LogFileOption(file, label));
+            }
+
+            SelectedFile = Files.FirstOrDefault(option => option.File.Path == selectedPath) ?? Files.FirstOrDefault();
+        }
+        finally
+        {
+            _selectingFile = false;
+        }
         OnPropertyChanged(nameof(IsTodaySelected));
     }
 
