@@ -75,7 +75,7 @@ internal sealed partial class LogService(
 
                 // The backup is written first: if that fails, the log is left as it was.
                 fileSystem.CreateDirectory(BackupDirectory);
-                var path = Path.Combine(BackupDirectory, $"{Path.GetFileNameWithoutExtension(file)}-cleared-{DateTime.Now:HHmmss}.log");
+                var path = UniqueBackupPath(file);
                 await fileSystem.WriteAllTextAsync(path, string.Join(Environment.NewLine, lines) + Environment.NewLine, cancellationToken)
                     .ConfigureAwait(false);
                 await fileSystem.TruncateAsync(file, CancellationToken.None).ConfigureAwait(false);
@@ -92,6 +92,22 @@ internal sealed partial class LogService(
         }
 
         return backup;
+    }
+
+    /// <summary>
+    /// A name no earlier backup uses: two clears in the same second (for example from two windows) must not overwrite
+    /// each other's backup. Clears run one at a time under the log lock, so checking first is enough.
+    /// </summary>
+    private string UniqueBackupPath(string file)
+    {
+        var name = $"{Path.GetFileNameWithoutExtension(file)}-cleared-{DateTime.Now:HHmmss}";
+        var path = Path.Combine(BackupDirectory, $"{name}.log");
+        for (var attempt = 2; fileSystem.FileExists(path); attempt++)
+        {
+            path = Path.Combine(BackupDirectory, $"{name}-{attempt}.log");
+        }
+
+        return path;
     }
 
     private static Task<string?> DefaultExclusive(Func<Task<string?>> operation) =>

@@ -111,6 +111,24 @@ public sealed class LogServiceTests
     }
 
     [Fact]
+    public async Task ClearCurrentAsync_TwiceInTheSameSecond_KeepsBothBackups()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        var service = new LogService(fileSystem, operation => operation());
+        fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] First\n";
+        var first = await service.ClearCurrentAsync();
+        fileSystem.Files[today] = "2026-10-31 10:00:00.200 +00:00 [INF] Log cleared from the GUI\n";
+
+        // Same second in practice; if the clock ticks over in between, the names differ anyway.
+        var second = await service.ClearCurrentAsync();
+
+        Assert.NotEqual(first, second);
+        Assert.Contains("First", fileSystem.Files[first!], StringComparison.Ordinal);
+        Assert.Contains("Log cleared", fileSystem.Files[second!], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ClearCurrentAsync_BackupFails_LeavesTheLogAsItWas()
     {
         var fileSystem = new InMemoryFileSystem { FailWritesUnder = LogService.BackupDirectory };
