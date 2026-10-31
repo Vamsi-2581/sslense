@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/panchalvimaldev/sslense/discussions
+    about: Ask how something works, or talk through an idea before opening an issue.
+  - name: Security problem
+    url: https://github.com/panchalvimaldev/sslense/security/advisories/new
+    about: Report vulnerabilities privately, never in a public issue.

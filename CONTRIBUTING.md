@@ -8,6 +8,27 @@ Thanks for helping. Bug reports, documentation fixes, tests, and code are all we
 - **Larger changes:** open an issue first to agree on the approach, especially for anything touching renewal, IIS bindings, the certificate store, or secrets.
 - Read [PROJECT_SPEC.md](PROJECT_SPEC.md) and [ROADMAP.md](ROADMAP.md) for the design and priorities.
 
+## Your first contribution
+
+1. Pick an issue labelled [good first issue](https://github.com/panchalvimaldev/sslense/labels/good%20first%20issue), or ask in [Discussions](https://github.com/panchalvimaldev/sslense/discussions) if you are unsure where to start. Comment on the issue so nobody else takes it at the same time.
+2. Fork the repository, create a branch, and make the change with a test.
+3. Run `dotnet build` and `dotnet test` (below), then open a pull request that says what changed and how you checked it.
+
+You do not need an IIS server to contribute. The test suite needs only Windows and the .NET 10 SDK. It runs without Administrator rights, uses mocks, an in-memory file system and a throwaway test certificate authority, and never changes IIS or contacts Let's Encrypt. An IIS machine is only needed to try a change by hand.
+
+### Where things are
+
+| Folder | What it contains |
+|---|---|
+| `src/SSLense.Core` | All behaviour. `Acme` (Let's Encrypt and other CAs), `Certificates` (store, imports, validation), `Iis` (sites and bindings), `Renewal`, `Reminders`, `Notifications`, `Diagnostics` (health check and bundles), `Config` (settings and state files) |
+| `src/SSLense.Gui` | The WPF desktop app: `Views` (XAML) and `ViewModels`, which only call Core |
+| `src/SSLense.Cli` | The command line (`Program.cs`), also only calling Core |
+| `src/SSLense.Service` | The Windows service that runs renewals and reminders every hour |
+| `tests/SSLense.Tests` | xUnit tests, organised like `src/SSLense.Core` |
+| `installer` | The WiX MSI |
+| `site` | The website, sslense.com |
+| `docs/design` | Design documents for larger features |
+
 ## Building and testing
 
 Requirements: Windows, the .NET 10 SDK (see `global.json`), and IIS with *IIS Management Scripts and Tools* for manual testing.
