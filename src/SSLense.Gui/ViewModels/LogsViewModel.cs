@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -26,12 +28,16 @@ public partial class LogsViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool isRefreshing;
 
+    [ObservableProperty]
+    private string? statusMessage;
+
     public LogsViewModel(ILogService logService, ILogger<LogsViewModel> logger)
     {
         _logService = logService;
         _logger = logger;
         _refreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsRefreshing);
-        OpenFolderCommand = new RelayCommand(OpenFolder);
+        SaveCopyCommand = new AsyncRelayCommand(SaveCopyAsync);
+        CopyCommand = new RelayCommand(Copy);
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _timer.Tick += OnTimerTick;
     }
@@ -42,7 +48,9 @@ public partial class LogsViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand RefreshCommand => _refreshCommand;
 
-    public IRelayCommand OpenFolderCommand { get; }
+    public IAsyncRelayCommand SaveCopyCommand { get; }
+
+    public IRelayCommand CopyCommand { get; }
 
     public void StartLiveUpdates()
     {
@@ -90,16 +98,36 @@ public partial class LogsViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void OpenFolder()
+    /// <summary>The log folder is restricted to Administrators and SYSTEM, which unelevated Explorer cannot open; a copy on
+    /// the Desktop can be opened, attached, or pasted from.</summary>
+    private async Task SaveCopyAsync()
     {
+        ErrorMessage = null;
         try
         {
-            _logService.OpenLogDirectory();
+            var path = await _logService.SaveCopyAsync(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)).ConfigureAwait(true);
+            StatusMessage = $"Saved a copy of today's log to {path}.";
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Could not open the log directory");
+            _logger.LogError(exception, "Could not save a copy of the log");
             ErrorMessage = exception.Message;
+        }
+    }
+
+    private void Copy()
+    {
+        ErrorMessage = null;
+        try
+        {
+            Clipboard.SetText(string.Join(Environment.NewLine, Lines));
+            StatusMessage = $"Copied {Lines.Count} line(s) to the clipboard.";
+        }
+        catch (Exception exception)
+        {
+            // The clipboard can be briefly locked by another application.
+            ErrorMessage = $"Could not copy to the clipboard: {exception.Message} Try again.";
         }
     }
 

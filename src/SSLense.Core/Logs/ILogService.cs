@@ -7,5 +7,9 @@ public interface ILogService
         int maximumLines = 1000,
         CancellationToken cancellationToken = default);
 
-    void OpenLogDirectory();
+    /// <summary>
+    /// Copies today's log file into <paramref name="directory"/> and returns the copy's path. The log folder itself is
+    /// restricted to Administrators and SYSTEM, and Explorer runs unelevated, so it cannot be opened directly.
+    /// </summary>
+    Task<string> SaveCopyAsync(string directory, CancellationToken cancellationToken = default);
 }

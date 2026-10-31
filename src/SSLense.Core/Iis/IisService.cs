@@ -278,7 +278,24 @@ internal sealed class IisService(ITlsBindingProbe tlsProbe) : IIisService
             : null;
 
         var bindings = site.Bindings.Select(MapBinding).ToArray();
-        return new IisSite(site.Id, site.Name, site.State.ToString(), physicalPath, bindings);
+        return new IisSite(site.Id, site.Name, ReadState(site), physicalPath, bindings);
+    }
+
+    /// <summary>
+    /// Some sites have no run state: FTP-only sites, sites whose bindings use only non-HTTP protocols, or any site while
+    /// the Windows Process Activation Service is stopped. Reading it then throws (0x800710D8, "The object identifier does
+    /// not represent a valid object"), which must not stop every other site from being listed.
+    /// </summary>
+    private static string ReadState(Site site)
+    {
+        try
+        {
+            return site.State.ToString();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return "Unknown";
+        }
     }
 
     private static IisBinding MapBinding(Binding binding)

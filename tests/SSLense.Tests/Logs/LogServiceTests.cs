@@ -33,4 +33,35 @@ public sealed class LogServiceTests
                         line.Contains(" FTL]", StringComparison.Ordinal)));
         fileSystem.VerifyAll();
     }
+
+    [Fact]
+    public void Filter_RealFileFormat_KeepsStackTracesWithTheirEntry()
+    {
+        string[] lines =
+        [
+            "2026-10-31 10:00:00.100 +00:00 [INF] Started",
+            "2026-10-31 10:00:01.200 +00:00 [ERR] Dashboard operation failed",
+            "System.Security.Cryptography.CryptographicException: The object identifier does not represent a valid object.",
+            "   at SSLense.Core.Certificates.CertificateInspector.GetDnsNames(X509Certificate2 certificate)",
+            "2026-10-31 10:00:02.300 +00:00 [WRN] Slow",
+            "   continuation of the warning"
+        ];
+
+        Assert.Equal(lines[1..4], LogService.Filter(lines, "Error"));
+        Assert.Equal(lines[4..], LogService.Filter(lines, "Warning"));
+        Assert.Equal(lines, LogService.Filter(lines, "All"));
+    }
+
+    [Fact]
+    public async Task SaveCopyAsync_WritesTodaysLogToTheGivenFolder()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        var log = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        fileSystem.Files[log] = "2026-10-31 10:00:00.100 +00:00 [INF] Started\n";
+
+        var copy = await new LogService(fileSystem).SaveCopyAsync(@"C:\Users\admin\Desktop");
+
+        Assert.StartsWith(@"C:\Users\admin\Desktop\sslense-20261031-", copy, StringComparison.Ordinal);
+        Assert.Contains("[INF] Started", fileSystem.Files[copy], StringComparison.Ordinal);
+    }
 }

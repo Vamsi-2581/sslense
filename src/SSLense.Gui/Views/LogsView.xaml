@@ -18,11 +18,12 @@
                 <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding SelectedLevel}"
                           Width="125" Margin="0,0,8,0" />
                 <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
-                <Button Content="Open log folder" Command="{Binding OpenFolderCommand}" Style="{StaticResource PrimaryButton}" />
+                <Button Content="Copy" Command="{Binding CopyCommand}" Margin="0,0,8,0" ToolTip="Copy the lines shown below, including stack traces, to paste into a GitHub issue or a message" />
+                <Button Content="Save copy to Desktop" Command="{Binding SaveCopyCommand}" Style="{StaticResource PrimaryButton}" ToolTip="The log folder is restricted to Administrators, so SSLense saves a copy you can open" />
             </StackPanel>
         </DockPanel>
 
-        <Border Grid.Row="1" Style="{StaticResource InfoBanner}" Margin="0,0,0,12"><StackPanel><TextBlock Text="{Binding FilePath}" Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" /></StackPanel></Border>
+        <Border Grid.Row="1" Style="{StaticResource InfoBanner}" Margin="0,0,0,12"><StackPanel><TextBlock Text="{Binding FilePath}" Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold" TextWrapping="Wrap" /></StackPanel></Border>
 
         <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" ClipToBounds="True">
             <ListBox ItemsSource="{Binding Lines}" Style="{StaticResource ConsoleList}" />
