@@ -64,6 +64,23 @@ public sealed class ReminderServiceTests
     }
 
     [Fact]
+    public async Task CheckAsync_ScheduleUnavailable_StillReportsALateAutomaticRenewal()
+    {
+        // A 90-day certificate with 10 days left: the fallback schedule renews it 30 days before expiry, 20 days ago.
+        await _certificates.UpsertAsync(new ManagedCertificate(
+            "Api", ["api.example.com"], "admin@example.com", "AABB", _clock.Now.AddDays(-80), _clock.Now.AddDays(10),
+            LastRenewalSucceeded: true, UpcomingNoticeSent: true));
+        var renewal = new Mock<IRenewalService>();
+        renewal.Setup(value => value.GetScheduledRenewalAsync(It.IsAny<ManagedCertificate>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout."));
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await CreateService(renewal.Object).CheckAsync();
+
+        Assert.Contains("should have renewed", Assert.Single(_sent).Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SaveSettingsAsync_RejectsOutOfRangeValues()
     {
         var service = CreateService();

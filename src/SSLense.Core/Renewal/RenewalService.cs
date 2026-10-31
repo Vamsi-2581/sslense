@@ -121,7 +121,7 @@ internal sealed class RenewalService : IRenewalService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // No CA renews an imported certificate for SSLense; ExpiryMonitor reminds the administrator instead.
+            // No CA renews an imported certificate for SSLense; the reminder digest reminds the administrator instead.
             if (certificate.Source == CertificateSource.Imported)
             {
                 results.Add(new RenewalResult(
@@ -342,16 +342,24 @@ internal sealed class RenewalService : IRenewalService
             return selected;
         }
 
-        var lifetime = certificate.NotAfter - certificate.NotBefore;
-        var relativeLeadDays = Math.Max(1, lifetime.TotalDays / 3d);
-        var configuredLeadDays = Math.Max(1, config.RenewalThresholdDays);
-        var leadDays = Math.Min(configuredLeadDays, relativeLeadDays);
-        var fallback = certificate.NotAfter.AddDays(-leadDays);
+        var fallback = GetFallbackRenewalTime(certificate, config.RenewalThresholdDays);
         progress?.Report(new ProgressEvent(
             "schedule",
             $"ARI is unavailable for {certificate.SiteName}; using the lifetime-relative fallback " +
             $"of {fallback:yyyy-MM-dd HH:mm} UTC."));
         return fallback;
+    }
+
+    /// <summary>
+    /// When to renew without a renewal window from the CA: the configured days before expiry, capped at a third of the
+    /// lifetime so short-lived certificates are not renewed too early.
+    /// </summary>
+    internal static DateTimeOffset GetFallbackRenewalTime(ManagedCertificate certificate, int renewalThresholdDays)
+    {
+        var lifetime = certificate.NotAfter - certificate.NotBefore;
+        var relativeLeadDays = Math.Max(1, lifetime.TotalDays / 3d);
+        var configuredLeadDays = Math.Max(1, renewalThresholdDays);
+        return certificate.NotAfter.AddDays(-Math.Min(configuredLeadDays, relativeLeadDays));
     }
 
     internal static DateTimeOffset SelectTimeInWindow(RenewalWindow window, string seed)

@@ -90,7 +90,7 @@ internal sealed class ReminderService(
         }
 
         var weekly = settings.WeeklySummaryDay == now.DayOfWeek && state.LastWeeklySummaryDate != today;
-        var digest = await BuildAsync(settings, now, weekly, cancellationToken).ConfigureAwait(false);
+        var digest = await BuildAsync(config, now, weekly, cancellationToken).ConfigureAwait(false);
         if (!digest.HasContent)
         {
             await stateStore.SaveAsync(state with { LastDigestDate = today }, CancellationToken.None).ConfigureAwait(false);
@@ -121,14 +121,14 @@ internal sealed class ReminderService(
     {
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var now = _time.GetLocalNow();
-        return await BuildAsync(config.Reminders, now, weeklySummary: config.Reminders.WeeklySummaryDay == now.DayOfWeek, cancellationToken)
+        return await BuildAsync(config, now, weeklySummary: config.Reminders.WeeklySummaryDay == now.DayOfWeek, cancellationToken)
             .ConfigureAwait(false);
     }
 
     public async Task<ReminderDigest> SendSampleAsync(CancellationToken cancellationToken = default)
     {
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var digest = await BuildAsync(config.Reminders, _time.GetLocalNow(), weeklySummary: false, cancellationToken).ConfigureAwait(false);
+        var digest = await BuildAsync(config, _time.GetLocalNow(), weeklySummary: false, cancellationToken).ConfigureAwait(false);
         if (!digest.HasContent)
         {
             digest = digest with { IsWeeklySummary = true };
@@ -179,7 +179,7 @@ internal sealed class ReminderService(
     }
 
     private async Task<ReminderDigest> BuildAsync(
-        ReminderConfig settings,
+        AppConfig config,
         DateTimeOffset now,
         bool weeklySummary,
         CancellationToken cancellationToken)
@@ -196,10 +196,12 @@ internal sealed class ReminderService(
             }
             catch (Exception) when (!cancellationToken.IsCancellationRequested)
             {
-                // Without a schedule the certificate can still be reminded about by expiry and failures.
+                // The lifetime-relative fallback, as renewal itself would use: an overdue renewal is still reported
+                // when the CA's renewal window cannot be fetched.
+                scheduled[certificate.SiteName] = RenewalService.GetFallbackRenewalTime(certificate, config.RenewalThresholdDays);
             }
         }
 
-        return ReminderDigestBuilder.Build(certificates, settings, now, scheduled, weeklySummary);
+        return ReminderDigestBuilder.Build(certificates, config.Reminders, now, scheduled, weeklySummary);
     }
 }
