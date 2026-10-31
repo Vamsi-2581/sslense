@@ -15,6 +15,7 @@ public sealed class LogServiceTests
         var fileSystem = new Mock<IFileSystem>(MockBehavior.Strict);
         fileSystem.Setup(value => value.GetFiles(AppPaths.LogDirectory, "sslense-*.log"))
             .Returns([oldFile, currentFile]);
+        fileSystem.Setup(value => value.GetFiles(LogService.BackupDirectory, "sslense-*.log")).Returns([]);
         fileSystem.Setup(value => value.ReadAllLinesAsync(currentFile, It.IsAny<CancellationToken>()))
             .ReturnsAsync([
                 "[20:00:00 INF] Information",
@@ -53,7 +54,7 @@ public sealed class LogServiceTests
     }
 
     [Fact]
-    public void Filter_Since_HidesEarlierEntriesWithTheirStackTraces()
+    public void Filter_Search_KeepsWholeEntriesThatMentionIt()
     {
         string[] lines =
         [
@@ -63,22 +64,55 @@ public sealed class LogServiceTests
             "System.ArgumentException: The sender address is not a valid email address."
         ];
 
-        var since = new DateTimeOffset(2026, 10, 31, 9, 0, 0, TimeSpan.FromHours(2)); // 07:00 UTC
-
-        Assert.Equal(lines[2..], LogService.Filter(lines, "All", since));
-        Assert.Equal(lines[2..], LogService.Filter(lines, "Error", since));
+        // The match is in the stack trace; the entry's first line comes with it.
+        Assert.Equal(lines[..2], LogService.Filter(lines, "Error", "0X800710d8"));
+        Assert.Empty(LogService.Filter(lines, "Warning", "sender"));
     }
 
     [Fact]
-    public async Task SaveCopyAsync_WritesTodaysLogToTheGivenFolder()
+    public async Task SaveCopyAsync_WritesTheLogToTheGivenFolder()
     {
         var fileSystem = new InMemoryFileSystem();
         var log = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
         fileSystem.Files[log] = "2026-10-31 10:00:00.100 +00:00 [INF] Started\n";
 
-        var copy = await new LogService(fileSystem).SaveCopyAsync(@"C:\Users\admin\Desktop");
+        var copy = await new LogService(fileSystem).SaveCopyAsync(log, @"C:\Users\admin\Desktop");
 
         Assert.StartsWith(@"C:\Users\admin\Desktop\sslense-20261031-", copy, StringComparison.Ordinal);
         Assert.Contains("[INF] Started", fileSystem.Files[copy], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ClearCurrentAsync_EmptiesTodaysLogAndKeepsABackupOutsideTheDailyFiles()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        var older = Path.Combine(AppPaths.LogDirectory, "sslense-20261030.log");
+        var today = Path.Combine(AppPaths.LogDirectory, "sslense-20261031.log");
+        fileSystem.Files[older] = "old\n";
+        fileSystem.Files[today] = "2026-10-31 10:00:00.100 +00:00 [ERR] Before clearing\n";
+        var service = new LogService(fileSystem);
+
+        var backup = await service.ClearCurrentAsync();
+
+        Assert.Equal(string.Empty, fileSystem.Files[today]);
+        Assert.Equal("old\n", fileSystem.Files[older]);
+        Assert.Equal(LogService.BackupDirectory, Path.GetDirectoryName(backup));
+        Assert.Contains("Before clearing", fileSystem.Files[backup!], StringComparison.Ordinal);
+        var files = service.ListFiles();
+        Assert.Equal([today, older, backup], files.Select(file => file.Path));
+        Assert.True(files[2].IsBackup);
+        Assert.Null(await service.ClearCurrentAsync());
+    }
+
+    [Fact]
+    public async Task ReadAsync_RefusesFilesThatAreNotSslenseLogs()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.Files[@"C:\ProgramData\SSLense\config.json"] = "{}";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new LogService(fileSystem).ReadAsync(@"C:\ProgramData\SSLense\config.json", "All", null, 100));
+
+        Assert.Contains("not an SSLense log file", exception.Message, StringComparison.Ordinal);
     }
 }

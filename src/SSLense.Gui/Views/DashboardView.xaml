@@ -7,7 +7,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="150" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <DockPanel Margin="0,0,0,18">
@@ -53,7 +53,8 @@
                     </StackPanel>
                 </DockPanel>
             </Border>
-            <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,14">
+            <!-- Only while an operation runs or after one fails; idle, there is nothing to say. -->
+            <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,14" Visibility="{Binding ShowActivity, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <DockPanel>
                     <Button DockPanel.Dock="Right" Content="Cancel operation" Command="{Binding CancelCommand}" Style="{StaticResource LinkButton}" />
                     <TextBlock DockPanel.Dock="Left" Text="●" Foreground="{StaticResource BrandBrush}" FontSize="10" Margin="0,0,9,0" VerticalAlignment="Center" />
@@ -71,7 +72,8 @@
                 <DockPanel Margin="18,14">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <Button Content="View details" Command="{Binding ViewDetailsCommand}" Margin="0,0,8,0" />
-                        <Button Content="Renew selected" Command="{Binding RenewSelectedCommand}" Margin="0,0,8,0" ToolTip="Immediately replace the selected certificate from the CA that issued it. Imported certificates are skipped: order them from your provider." />
+                        <Button Content="Renew selected" Command="{Binding RenewSelectedCommand}" Margin="0,0,8,0" ToolTip="Replace the selected certificate now, from the certificate authority that issued it (Let's Encrypt)." />
+                        <Button Content="Order replacement" Command="{Binding OrderReplacementCommand}" Margin="0,0,8,0" ToolTip="Certificates from other providers are renewed by ordering again from the provider: create a request, then complete it." />
                         <Button Content="Renew all due" Command="{Binding RenewAllCommand}" />
                     </StackPanel>
                     <StackPanel><TextBlock Text="Managed certificates" Style="{StaticResource SectionTitle}" /><TextBlock Text="Select a certificate to manage it." Style="{StaticResource CaptionText}" Margin="0,3,0,0" /></StackPanel>
@@ -107,8 +109,10 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="4" Style="{StaticResource Card}" Padding="0" Margin="0,14,0,0" ClipToBounds="True">
-            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions><TextBlock Text="Operation activity" FontWeight="SemiBold" Margin="14,10" /><ListBox Grid.Row="1" ItemsSource="{Binding ProgressLines}" Style="{StaticResource ConsoleList}" /></Grid>
+        <!-- Step-by-step progress of renewals started here; hidden until there is some. -->
+        <Border Grid.Row="4" Style="{StaticResource Card}" Padding="0" Margin="0,14,0,0" ClipToBounds="True" Height="150"
+                Visibility="{Binding HasProgress, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions><DockPanel Margin="14,8"><Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearProgressCommand}" Style="{StaticResource LinkButton}" /><TextBlock Text="Renewal progress" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel><ListBox Grid.Row="1" ItemsSource="{Binding ProgressLines}" Style="{StaticResource ConsoleList}" /></Grid>
         </Border>
     </Grid>
 </UserControl>

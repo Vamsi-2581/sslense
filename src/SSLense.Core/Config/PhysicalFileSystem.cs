@@ -32,6 +32,21 @@ internal sealed class PhysicalFileSystem : IFileSystem
         return [.. lines];
     }
 
+    public async Task<string> TakeAllTextAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.ReadWrite | FileShare.Delete,
+            4096,
+            FileOptions.Asynchronous);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        stream.SetLength(0);
+        return text;
+    }
+
     public IReadOnlyList<string> GetFiles(string path, string searchPattern) =>
         Directory.Exists(path) ? Directory.GetFiles(path, searchPattern) : [];
 

@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using SSLense.Core;
 using SSLense.Core.Acme;
+using SSLense.Core.Certificates;
 using SSLense.Core.Config;
 using SSLense.Core.Iis;
 using SSLense.Core.Validation;
@@ -17,6 +18,7 @@ public partial class IssueCertificateViewModel : ObservableObject
     private readonly IPreflightService _preflightService;
     private readonly IAcmeService _acmeService;
     private readonly ISettingsService _settingsService;
+    private readonly IImportedCertificateService _certificates;
     private readonly ILogger<IssueCertificateViewModel> _logger;
     private readonly AsyncRelayCommand _preflightCommand;
     private readonly AsyncRelayCommand _issueCommand;
@@ -36,12 +38,14 @@ public partial class IssueCertificateViewModel : ObservableObject
         IPreflightService preflightService,
         IAcmeService acmeService,
         ISettingsService settingsService,
+        IImportedCertificateService certificates,
         ILogger<IssueCertificateViewModel> logger)
     {
         _iisService = iisService;
         _preflightService = preflightService;
         _acmeService = acmeService;
         _settingsService = settingsService;
+        _certificates = certificates;
         _logger = logger;
         NextCommand = new RelayCommand(Next, CanNext);
         BackCommand = new RelayCommand(Back, () => !IsBusy && CurrentStep > 1);
@@ -83,9 +87,10 @@ public partial class IssueCertificateViewModel : ObservableObject
             var config = await _settingsService.GetAsync();
             Email = config.DefaultEmail ?? string.Empty;
             var sites = await _iisService.GetSitesAsync();
+            var https = await DescribeHttpsAsync();
             foreach (var site in sites)
             {
-                Sites.Add(new IisSiteOption(site.Name, site));
+                Sites.Add(new IisSiteOption(site.Name, site, https.GetValueOrDefault(site.Name)));
             }
             SelectedSite = Sites.FirstOrDefault();
         }
@@ -93,6 +98,34 @@ public partial class IssueCertificateViewModel : ObservableObject
         {
             _logger.LogError(exception, "Could not initialize the issue wizard");
             ErrorMessage = exception.Message;
+        }
+    }
+
+    /// <summary>
+    /// Per site, the certificates it already serves over HTTPS. Such a site is not hidden: replacing a certificate bought
+    /// elsewhere with Let's Encrypt is a normal reason to issue, but the administrator should see what is replaced.
+    /// </summary>
+    private async Task<Dictionary<string, string>> DescribeHttpsAsync()
+    {
+        try
+        {
+            var bindings = await _certificates.DiscoverAsync().ConfigureAwait(true);
+            return bindings.Where(binding => binding.Thumbprint is not null)
+                .GroupBy(binding => binding.SiteName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => string.Join("; ", group.Select(binding =>
+                        $"{(binding.Host.Length == 0 ? "(no host name)" : binding.Host)}:{binding.Port} uses a certificate from " +
+                        $"{binding.IssuerName ?? "an unknown issuer"}" +
+                        (binding.NotAfter is { } expires ? $", expiring {expires.LocalDateTime:dd MMM yyyy}" : string.Empty) +
+                        (binding.IsManaged ? " (managed by SSLense)" : string.Empty))),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Only a hint; the wizard works without it.
+            _logger.LogWarning(exception, "Could not describe existing HTTPS bindings");
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
     }
 

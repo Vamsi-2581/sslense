@@ -8,7 +8,8 @@
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
     <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,8,0"/>
     <Button Content="Remove" Click="OnRemoveClick" Style="{StaticResource DangerButton}" Margin="0,0,8,0"/>
-    <Button Content="Renew now" Command="{Binding RenewCommand}" Style="{StaticResource PrimaryButton}"/>
+    <Button Content="Order replacement" Command="{Binding OrderReplacementCommand}" Margin="0,0,8,0" ToolTip="Certificates from other providers are renewed by ordering again from the provider: create a request, then complete it."/>
+    <Button Content="Renew now" Command="{Binding RenewCommand}" Style="{StaticResource PrimaryButton}" ToolTip="Replace the certificate now from the certificate authority that issued it (Let's Encrypt)."/>
    </StackPanel>
   </DockPanel>
   <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16" Margin="0,0,0,14">

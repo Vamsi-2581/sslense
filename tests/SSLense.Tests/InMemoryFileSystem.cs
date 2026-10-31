@@ -41,6 +41,13 @@ internal sealed class InMemoryFileSystem : IFileSystem
 
     public IAsyncDisposable? TryAcquireExclusiveFileLock(string path) => new Scope();
 
+    public Task<string> TakeAllTextAsync(string path, CancellationToken cancellationToken)
+    {
+        var text = Files[path];
+        Files[path] = string.Empty;
+        return Task.FromResult(text);
+    }
+
     public void DeleteFile(string path) => Files.Remove(path);
 
     public void DeleteDirectoryIfEmpty(string path)

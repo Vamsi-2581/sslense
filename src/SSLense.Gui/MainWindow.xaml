@@ -121,10 +121,29 @@
             </Grid.RowDefinitions>
             <Border Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="28,12">
                 <DockPanel>
-                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                        <Ellipse Width="8" Height="8" Fill="#22C55E" Margin="0,0,8,0" />
-                        <TextBlock Text="System ready" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
-                    </StackPanel>
+                    <!-- The quick local health check (data folder, configuration, service, heartbeat, notifications). -->
+                    <Button DockPanel.Dock="Right" Command="{Binding OpenHealthCommand}" Style="{StaticResource LinkButton}" MinHeight="0" Padding="4,2"
+                            ToolTip="Result of the quick health check, refreshed with the Dashboard. Click for the full check.">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="HealthDot" Width="8" Height="8" Margin="0,0,8,0">
+                                <Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="#94A3B8" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Ok"><Setter Property="Fill" Value="#22C55E" /></DataTrigger>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Warning"><Setter Property="Fill" Value="#F59E0B" /></DataTrigger>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Fail"><Setter Property="Fill" Value="#DC2626" /></DataTrigger>
+                                    </Style.Triggers></Style></Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}">
+                                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="Checking health…" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Ok"><Setter Property="Text" Value="Health check passed" /></DataTrigger>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Warning"><Setter Property="Text" Value="{Binding Dashboard.HealthAlertTitle}" /></DataTrigger>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Fail"><Setter Property="Text" Value="{Binding Dashboard.HealthAlertTitle}" /></DataTrigger>
+                                        <DataTrigger Binding="{Binding Dashboard.HealthState}" Value="Unknown"><Setter Property="Text" Value="Health unknown: open Health" /></DataTrigger>
+                                    </Style.Triggers></Style></TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Button>
                     <TextBlock Text="IIS certificate operations" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
                 </DockPanel>
             </Border>

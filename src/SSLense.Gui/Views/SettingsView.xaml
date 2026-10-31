@@ -104,8 +104,9 @@
 
    <GroupBox Header="Windows Service"><StackPanel>
     <Border Style="{StaticResource InfoBanner}" Margin="0,0,0,14"><TextBlock Text="{Binding ServiceStatus, StringFormat=Service status: {0}}" FontWeight="SemiBold"/></Border>
-    <TextBlock Text="SERVICE EXECUTABLE" Style="{StaticResource FieldLabel}"/><TextBox Text="{Binding ServicePath}"/>
-    <WrapPanel Margin="0,16,0,0"><Button Content="Install" Command="{Binding InstallServiceCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/><Button Content="Start" Command="{Binding StartServiceCommand}" Margin="0,0,8,0"/><Button Content="Stop" Command="{Binding StopServiceCommand}" Margin="0,0,8,0"/><Button Content="Uninstall" Command="{Binding UninstallServiceCommand}" Style="{StaticResource DangerButton}" Margin="0,0,8,0"/><Button Content="Refresh status" Command="{Binding RefreshServiceCommand}"/></WrapPanel>
+    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+               Text="The installer registers this service and starts it automatically with Windows; it checks and renews certificates every hour. Stop or restart it only when troubleshooting, for example after editing files in C:\ProgramData\SSLense by hand."/>
+    <WrapPanel Margin="0,14,0,0"><Button Content="Restart" Command="{Binding RestartServiceCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/><Button Content="Start" Command="{Binding StartServiceCommand}" Margin="0,0,8,0"/><Button Content="Stop" Command="{Binding StopServiceCommand}" Margin="0,0,8,0"/><Button Content="Refresh status" Command="{Binding RefreshServiceCommand}"/></WrapPanel>
    </StackPanel></GroupBox>
   </StackPanel>
  </ScrollViewer>

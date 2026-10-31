@@ -20,6 +20,12 @@ public interface IFileSystem
 
     Task WriteAllTextAtomicAsync(string path, string contents, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Returns the file's text and empties it through one handle that shares access with other writers, as when another
+    /// process is still appending log entries to it.
+    /// </summary>
+    Task<string> TakeAllTextAsync(string path, CancellationToken cancellationToken);
+
     Task<IAsyncDisposable> AcquireExclusiveFileLockAsync(
         string path,
         CancellationToken cancellationToken);

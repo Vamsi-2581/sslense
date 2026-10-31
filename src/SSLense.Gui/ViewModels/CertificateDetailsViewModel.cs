@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using SSLense.Core.Acme;
 using SSLense.Core.Certificates;
+using SSLense.Core.Config;
 using SSLense.Core.Renewal;
 
 namespace SSLense.Gui.ViewModels;
@@ -13,6 +14,7 @@ public partial class CertificateDetailsViewModel : ObservableObject
     private readonly ICertificateManagementService _managementService;
     private readonly IRenewalService _renewalService;
     private readonly ILogger<CertificateDetailsViewModel> _logger;
+    private readonly INavigationService _navigation;
     private readonly AsyncRelayCommand _refreshCommand;
     private readonly AsyncRelayCommand _renewCommand;
     private readonly AsyncRelayCommand _removeCommand;
@@ -29,17 +31,21 @@ public partial class CertificateDetailsViewModel : ObservableObject
     [ObservableProperty] private string boundSites = string.Empty;
     [ObservableProperty] private string resultMessage = string.Empty;
     [ObservableProperty] private string environment = string.Empty;
+    [ObservableProperty] private bool isImported;
 
     public CertificateDetailsViewModel(
         ICertificateManagementService managementService,
         IRenewalService renewalService,
-        ILogger<CertificateDetailsViewModel> logger)
+        ILogger<CertificateDetailsViewModel> logger,
+        INavigationService navigation)
     {
         _managementService = managementService;
         _renewalService = renewalService;
         _logger = logger;
+        _navigation = navigation;
+        OrderReplacementCommand = new RelayCommand(() => _navigation.Navigate("Other Providers", SelectedSite), () => !IsBusy && IsImported);
         _refreshCommand = new AsyncRelayCommand(RefreshAsync, CanOperate);
-        _renewCommand = new AsyncRelayCommand(RenewAsync, CanOperate);
+        _renewCommand = new AsyncRelayCommand(RenewAsync, () => CanOperate() && !IsImported);
         _removeCommand = new AsyncRelayCommand(RemoveAsync, CanOperate);
     }
 
@@ -48,6 +54,9 @@ public partial class CertificateDetailsViewModel : ObservableObject
     public IAsyncRelayCommand RefreshCommand => _refreshCommand;
     public IAsyncRelayCommand RenewCommand => _renewCommand;
     public IAsyncRelayCommand RemoveCommand => _removeCommand;
+
+    /// <summary>Imported certificates are replaced by ordering again from their provider; SSLense cannot renew them.</summary>
+    public IRelayCommand OrderReplacementCommand { get; }
 
     public async Task InitializeAsync(string? requestedSite = null)
     {
@@ -90,6 +99,7 @@ public partial class CertificateDetailsViewModel : ObservableObject
             ExpiryDate = detail.NotAfter.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
             BoundSites = detail.BoundSites.Count == 0 ? "None" : string.Join(", ", detail.BoundSites);
             Environment = detail.AuthorityName;
+            IsImported = detail.Source == CertificateSource.Imported;
             RecentLogLines.Clear();
             foreach (var line in detail.RecentLogLines) RecentLogLines.Add(line);
         }, cancellationToken);
@@ -133,6 +143,11 @@ public partial class CertificateDetailsViewModel : ObservableObject
     }
 
     private bool CanOperate() => !IsBusy && SelectedSite is not null;
-    private void NotifyCommands() { _refreshCommand.NotifyCanExecuteChanged(); _renewCommand.NotifyCanExecuteChanged(); _removeCommand.NotifyCanExecuteChanged(); }
+    partial void OnIsImportedChanged(bool value) => NotifyCommands();
+    private void NotifyCommands()
+    {
+        _refreshCommand.NotifyCanExecuteChanged(); _renewCommand.NotifyCanExecuteChanged(); _removeCommand.NotifyCanExecuteChanged();
+        (OrderReplacementCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
     private static RenewalResult AssertSingle(IReadOnlyList<RenewalResult> results) => results.Single();
 }
