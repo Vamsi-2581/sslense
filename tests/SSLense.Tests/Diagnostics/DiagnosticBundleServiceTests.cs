@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using Moq;
 using SSLense.Core.Certificates;
 using SSLense.Core.Config;
@@ -65,6 +66,90 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_RedactHosts_ReplacesSiteFoldersInJsonAndLogs()
+    {
+        var service = CreateService();
+
+        var result = await service.CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        var entries = ReadEntries(result.Path);
+        var everything = string.Join("\n", entries.Values);
+        Assert.DoesNotContain("inetpub", everything, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("folder-1", entries["iis-sites.json"], StringComparison.Ordinal);
+        Assert.Contains(@"folder-1\.well-known", entries["logs/sslense-20261028.log"], StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Müller GmbH")]
+    [InlineData("Smith & Sons")]
+    [InlineData("O'Brien+Co")]
+    [InlineData("日本語")]
+    [InlineData("Shop 🚀")]
+    public async Task CreateAsync_RedactHosts_ReplacesNamesThatJsonWouldEscape(string name)
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, name, "Started", $@"D:\clients\{name}\web", [])]);
+
+        var result = await CreateService(iis).CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        using var sites = JsonDocument.Parse(ReadEntries(result.Path)["iis-sites.json"]);
+        var site = sites.RootElement[0];
+        Assert.StartsWith("site-", site.GetProperty("name").GetString(), StringComparison.Ordinal);
+        Assert.Equal("folder-1", site.GetProperty("physicalPath").GetString());
+    }
+
+    [Fact]
+    public async Task CreateAsync_RedactHosts_ReplacesAFolderThatContainsAnEmailAddress()
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, "Site", "Started", @"D:\clients\admin@example.com\PrivateProject\web", [])]);
+
+        var result = await CreateService(iis).CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        var entries = ReadEntries(result.Path);
+        Assert.DoesNotContain("PrivateProject", string.Join("\n", entries.Values), StringComparison.Ordinal);
+        Assert.Contains(@"folder-1\.well-known", entries["logs/sslense-20261028.log"], StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Password")]
+    [InlineData("Authorization")]
+    [InlineData("Bearer")]
+    public async Task CreateAsync_RedactHosts_ASiteNamedLikeASecretLabelDoesNotExposeSecrets(string siteName)
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, siteName, "Started", @"D:\sites\web", [])]);
+
+        var result = await CreateService(iis).CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        var everything = string.Join("\n", ReadEntries(result.Path).Values);
+        Assert.DoesNotContain(LoggedPassword, everything, StringComparison.Ordinal);
+        Assert.DoesNotContain(LoggedBearer, everything, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutRedaction_KeepsSiteFolders()
+    {
+        var result = await CreateService().CreateAsync(new DiagnosticBundleRequest(_output));
+
+        Assert.Contains("inetpub", ReadEntries(result.Path)["iis-sites.json"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateFolderMap_ReplacesTheLongestFolderFirst_AndSkipsABareDrive()
+    {
+        var map = DiagnosticBundleService.CreateFolderMap([@"D:\sites\shop", @"D:\sites\shop-old\web", @"D:\"]);
+
+        Assert.Equal(2, map.Count);
+        Assert.Matches(map[0].Pattern, @"D:\\sites\\shop-old\\web");
+        Assert.DoesNotMatch(map[1].Pattern, @"D:\sites\shop-old");
+        Assert.Matches(map[1].Pattern, @"D:/sites/shop");
+    }
+
+    [Fact]
     public async Task CreateAsync_FailingSection_StillWritesTheRestAndExplainsTheGap()
     {
         var iis = new Mock<IIisService>(MockBehavior.Strict);
@@ -110,6 +195,8 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
         var fileSystem = new InMemoryFileSystem();
         fileSystem.Files[Path.Combine(AppPaths.LogDirectory, "sslense-20261028.log")] = string.Join("\n",
             "[INF] Issued for acme-test.sslense.com, thumbprint 6533D7B01A1F3C4BDF85551F375A3EFC4BD45F5F",
+            @"[INF] Preparing the challenge in C:\inetpub\sslense\.well-known",
+            @"[INF] Preparing the challenge in D:\clients\admin@example.com\PrivateProject\web\.well-known",
             $"[ERR] SMTP authentication failed: password={LoggedPassword}",
             $"[ERR] POST https://hooks.slack.com/services/T000/B000/{LoggedWebhookToken} returned 500",
             $"[DBG] Authorization: Bearer {LoggedBearer}",
