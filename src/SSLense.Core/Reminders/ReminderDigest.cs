@@ -26,7 +26,10 @@ public enum ReminderItemKind
     ServedCertificateProblem,
 
     /// <summary>For information: an automatic certificate entered the window and will be renewed on its own.</summary>
-    UpcomingAutomaticRenewal
+    UpcomingAutomaticRenewal,
+
+    /// <summary>For information: an automatic certificate is still in the window, and repeats were asked for.</summary>
+    AutomaticRenewalReminder
 }
 
 /// <param name="Detail">What a daily check found, for the kinds that report one.</param>
@@ -47,10 +50,10 @@ public sealed record ReminderDigest(
     DateTimeOffset BuiltAt)
 {
     public IReadOnlyList<ReminderItem> NeedsAttention =>
-        Items.Where(item => item.Kind != ReminderItemKind.UpcomingAutomaticRenewal).ToArray();
+        Items.Where(item => !IsInformational(item.Kind)).ToArray();
 
     public IReadOnlyList<ReminderItem> Upcoming =>
-        Items.Where(item => item.Kind == ReminderItemKind.UpcomingAutomaticRenewal).ToArray();
+        Items.Where(item => IsInformational(item.Kind)).ToArray();
 
     /// <summary>Whether this digest should be sent: something needs attention, a notice is due, or it is the weekly summary.</summary>
     public bool HasContent => Items.Count > 0 || IsWeeklySummary;
@@ -61,8 +64,11 @@ public sealed record ReminderDigest(
             item.Certificate.SiteName,
             item.Certificate.Thumbprint,
             Reminded: item.Kind != ReminderItemKind.UpcomingAutomaticRenewal,
-            NoticeSent: item.Kind == ReminderItemKind.UpcomingAutomaticRenewal))
+            NoticeSent: IsInformational(item.Kind)))
         .ToArray();
+
+    private static bool IsInformational(ReminderItemKind kind) =>
+        kind is ReminderItemKind.UpcomingAutomaticRenewal or ReminderItemKind.AutomaticRenewalReminder;
 
     public NotificationMessage ToMessage(string serverName, bool sample = false)
     {
@@ -298,6 +304,13 @@ public static class ReminderDigestBuilder
         {
             return IntervalElapsed(certificate, now, interval)
                 ? new ReminderItem(certificate, ReminderItemKind.RenewalNotReady, daysLeft, scheduled, problem)
+                : null;
+        }
+
+        if (inWindow && settings.RepeatAutomaticReminders)
+        {
+            return IntervalElapsed(certificate, now, interval)
+                ? new ReminderItem(certificate, ReminderItemKind.AutomaticRenewalReminder, daysLeft, scheduled)
                 : null;
         }
 

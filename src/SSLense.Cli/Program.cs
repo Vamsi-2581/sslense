@@ -753,12 +753,14 @@ static Command CreateRemindersCommand(IServiceProvider services)
     var sendAtOption = new Option<int?>("--send-at") { Description = "Hour of the day (0-23, server time) from which the digest is sent." };
     var noticesOption = new Option<string?>("--notices") { Description = "One notice when an automatic certificate is about to renew: on or off." };
     noticesOption.AcceptOnlyFromAmong("on", "off");
+    var repeatAutomaticOption = new Option<string?>("--repeat-automatic") { Description = "Keep reminding about automatic certificates until they renew: on or off." };
+    repeatAutomaticOption.AcceptOnlyFromAmong("on", "off");
     var weeklyOption = new Option<string?>("--weekly") { Description = "Weekly summary: off, or a day such as monday." };
     weeklyOption.AcceptOnlyFromAmong(["off", .. Enum.GetNames<DayOfWeek>().Select(day => day.ToLowerInvariant())]);
     var checksOption = new Option<string?>("--checks") { Description = "Daily renewal readiness and served-certificate checks: on or off." };
     checksOption.AcceptOnlyFromAmong("on", "off");
     var setCommand = new Command("set", "Change the reminder settings; options left out keep their value.");
-    foreach (var option in new Option[] { startOption, repeatOption, sendAtOption, noticesOption, weeklyOption, checksOption })
+    foreach (var option in new Option[] { startOption, repeatOption, sendAtOption, noticesOption, repeatAutomaticOption, weeklyOption, checksOption })
     {
         setCommand.Options.Add(option);
     }
@@ -769,6 +771,7 @@ static Command CreateRemindersCommand(IServiceProvider services)
         parseResult.GetValue(repeatOption),
         parseResult.GetValue(sendAtOption),
         parseResult.GetValue(noticesOption),
+        parseResult.GetValue(repeatAutomaticOption),
         parseResult.GetValue(weeklyOption),
         parseResult.GetValue(checksOption),
         token));
@@ -814,6 +817,7 @@ static async Task<int> ShowRemindersAsync(IReminderService reminders, Cancellati
         Console.WriteLine($"Repeat: every {settings.RepeatDays} day(s), daily in the last 7 days");
         Console.WriteLine($"Daily digest: from {settings.SendAtHour:00}:00 server time, only when something needs attention");
         Console.WriteLine($"Upcoming automatic renewal notices: {(settings.UpcomingRenewalNotices ? "on" : "off")}");
+        Console.WriteLine($"Keep reminding about automatic certificates until they renew: {(settings.RepeatAutomaticReminders ? "on" : "off")}");
         Console.WriteLine($"Weekly summary: {settings.WeeklySummaryDay?.ToString() ?? "off"}");
         Console.WriteLine($"Daily readiness and served-certificate checks: {(settings.ProactiveChecks ? "on" : "off")}");
         Console.WriteLine($"Last digest handled: {overview.LastDigestDate?.ToString("yyyy-MM-dd") ?? "never (the service handles it from the send time)"}");
@@ -845,13 +849,14 @@ static async Task<int> SetRemindersAsync(
     int? repeatDays,
     int? sendAt,
     string? notices,
+    string? repeatAutomatic,
     string? weekly,
     string? checks,
     CancellationToken token)
 {
-    if (startDays is null && repeatDays is null && sendAt is null && notices is null && weekly is null && checks is null)
+    if (startDays is null && repeatDays is null && sendAt is null && notices is null && repeatAutomatic is null && weekly is null && checks is null)
     {
-        Console.Error.WriteLine("Error: specify at least one of --start-days, --repeat-days, --send-at, --notices, --weekly, --checks.");
+        Console.Error.WriteLine("Error: specify at least one of --start-days, --repeat-days, --send-at, --notices, --repeat-automatic, --weekly, --checks.");
         return 1;
     }
 
@@ -865,6 +870,7 @@ static async Task<int> SetRemindersAsync(
                     RepeatDays = repeatDays ?? current.RepeatDays,
                     SendAtHour = sendAt ?? current.SendAtHour,
                     UpcomingRenewalNotices = notices is null ? current.UpcomingRenewalNotices : notices == "on",
+                    RepeatAutomaticReminders = repeatAutomatic is null ? current.RepeatAutomaticReminders : repeatAutomatic == "on",
                     ProactiveChecks = checks is null ? current.ProactiveChecks : checks == "on",
                     WeeklySummaryDay = weekly is null
                         ? current.WeeklySummaryDay

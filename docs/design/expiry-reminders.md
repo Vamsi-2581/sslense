@@ -29,6 +29,7 @@ Failure notifications for automatic renewal stay immediate, as today. They are f
 | Repeat every | 1 day | 1–30 days | In the last 7 days before expiry, reminders are daily whatever this says. |
 | Send at | 09:00 server local time | any hour | The digest is sent at the first hourly check at or after this time. |
 | Upcoming renewal notices | On | on/off | Section 4.2. |
+| Keep reminding about automatic certificates | Off | on/off | Section 4.2. |
 | Weekly summary | Off | on/off, day of week | Section 4.4. |
 
 The digest goes to every configured channel (email, chat, ntfy, Event Log), like other notifications.
@@ -50,6 +51,8 @@ Automatic renewal *failures* are notified immediately as today, and also appear 
 ### 4.2 Upcoming-renewal notice
 
 When an automatic certificate enters the start window, today's digest includes one line for it: expires on X; SSLense will renew it automatically around Y. Y is the ARI-selected time, or the fallback schedule when the CA has no ARI. It is sent once per certificate and is not repeated. If this is the only content, the digest is still sent, because the administrator asked to be told.
+
+With **Keep reminding about automatic certificates** on, the same line repeats at the repeat interval (daily in the last 7 days) from the start of the window until the certificate renews, whatever the notice setting says. These lines are for information: they do not count as needing attention or raise the severity. They do share the repeat interval with problem lines, so a renewal that becomes overdue the day after such a line is reported when the interval next elapses. A failing renewal is still sent immediately.
 
 ### 4.3 Per-certificate reminder setting
 
@@ -88,7 +91,7 @@ Migrations follow the existing pattern: the old file is backed up first, and new
 - **Settings:** a new Reminders group (section 3) with **Send sample digest**, which sends today's digest as it would be sent, marked as a sample, without recording anything.
 - **Dashboard:** a Reminders column (On, Snoozed until D, Off until replaced, Off).
 - **Certificate Details:** the reminder setting, when the last reminder was sent, and the next expected one.
-- **CLI:** `reminders show`, `reminders set --start-days --repeat-days --send-at --notices on|off --weekly off|<day>`, `reminders site` (section 4.3), `reminders preview` (prints the digest without sending it), `reminders send-sample`.
+- **CLI:** `reminders show`, `reminders set --start-days --repeat-days --send-at --notices on|off --repeat-automatic on|off --weekly off|<day>`, `reminders site` (section 4.3), `reminders preview` (prints the digest without sending it), `reminders send-sample`.
 - **Health:** a check that reminders are configured and that at least one channel works.
 
 ## 7. Safety

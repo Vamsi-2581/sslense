@@ -18,7 +18,7 @@ internal static class StateSchema
     /// Version 0 had no version field. Version 2 replaced the single SMTP server and generic webhook with
     /// email, chat channels, a heartbeat, and the Event Log (see <see cref="ConfigMigrations"/>). Version 3 adds
     /// configured certificate authorities. Version 4 adds reminder settings, which default when absent. Version 5 adds
-    /// the proactive-checks reminder setting, which also defaults when absent.
+    /// the proactive-checks and repeat-automatic-reminders settings, which also default when absent.
     /// </summary>
     public const int Config = 5;
 

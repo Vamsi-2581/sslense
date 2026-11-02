@@ -10,7 +10,7 @@ namespace SSLense.Core.Config;
 /// <param name="Issuer">The issuing CA's name, as shown in the certificate, for display.</param>
 /// <param name="Reminders">Whether this certificate is included in reminder digests; see <see cref="ReminderMode"/>.</param>
 /// <param name="SnoozedUntil">With <see cref="ReminderMode.Snoozed"/>, when reminders resume.</param>
-/// <param name="LastRemindedAt">When this certificate was last included in a sent digest as needing attention.</param>
+/// <param name="LastRemindedAt">When this certificate was last included in a sent digest as needing attention or as a repeated automatic reminder.</param>
 /// <param name="UpcomingNoticeSent">Whether the one upcoming-renewal notice was sent for this certificate.</param>
 /// <remarks>
 /// The reminder fields belong to the record, not to a certificate: <see cref="IManagedCertificateStore.UpsertAsync"/> keeps

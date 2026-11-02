@@ -47,6 +47,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int reminderRepeatDays = 1;
     [ObservableProperty] private HourOption? reminderSendAt;
     [ObservableProperty] private bool upcomingRenewalNotices = true;
+    [ObservableProperty] private bool repeatAutomaticReminders;
     [ObservableProperty] private bool proactiveChecks = true;
     [ObservableProperty] private string weeklySummary = "Off";
 
@@ -129,6 +130,7 @@ public partial class SettingsViewModel : ObservableObject
             ReminderRepeatDays = reminders.RepeatDays;
             ReminderSendAt = Hours[reminders.SendAtHour];
             UpcomingRenewalNotices = reminders.UpcomingRenewalNotices;
+            RepeatAutomaticReminders = reminders.RepeatAutomaticReminders;
             ProactiveChecks = reminders.ProactiveChecks;
             WeeklySummary = reminders.WeeklySummaryDay?.ToString() ?? "Off";
             await LoadNotificationsAsync(token).ConfigureAwait(true);
@@ -241,6 +243,7 @@ public partial class SettingsViewModel : ObservableObject
                     RepeatDays = ReminderRepeatDays,
                     SendAtHour = ReminderSendAt?.Hour ?? 9,
                     UpcomingRenewalNotices = UpcomingRenewalNotices,
+                    RepeatAutomaticReminders = RepeatAutomaticReminders,
                     ProactiveChecks = ProactiveChecks,
                     WeeklySummaryDay = Enum.TryParse<DayOfWeek>(WeeklySummary, out var day) ? day : null
                 },

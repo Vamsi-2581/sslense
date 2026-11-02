@@ -215,7 +215,7 @@ public sealed class ReminderServiceTests
         config.Setup(value => value.SaveAsync(It.IsAny<AppConfig>(), It.IsAny<CancellationToken>()))
             .Callback<AppConfig, CancellationToken>((value, _) => saved = value)
             .Returns(Task.CompletedTask);
-        var service = new ReminderService(_certificates, config.Object, Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
+        var service = new ReminderService(_certificates, config.Object, ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _clock);
         _clock.Now = _clock.Now.AddHours(1);
         await service.CheckAsync();
         Assert.Empty(_sent);

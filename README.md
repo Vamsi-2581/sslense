@@ -254,7 +254,7 @@ Once a day (from 09:00 server time by default) the service sends one digest to e
 - an automatic renewal that is failing or overdue;
 - an expired certificate.
 
-Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. Renewal failures are still sent immediately as they happen, even for a certificate whose reminders are off. A certificate from another provider that is replaced outside SSLense, for example through IIS Manager, is noticed within the hour and its reminders stop.
+Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. To keep hearing about them until they renew, turn on **Keep reminding about Let's Encrypt certificates until they renew** under **Settings → Reminders**, or run `SSLense.Cli reminders set --repeat-automatic on`; it is off by default and uses the same repeat interval. Renewal failures are still sent immediately as they happen, even for a certificate whose reminders are off. A certificate from another provider that is replaced outside SSLense, for example through IIS Manager, is noticed within the hour and its reminders stop.
 
 Two daily checks find problems before they cause an outage. They only report, and a problem appears in the digest after two daily failures in a row:
 

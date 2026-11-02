@@ -18,6 +18,9 @@ public sealed record ReminderConfig
     /// <summary>One notice when an automatically renewed certificate enters the reminder window.</summary>
     public bool UpcomingRenewalNotices { get; init; } = true;
 
+    /// <summary>Keep listing an automatically renewed certificate at the repeat interval until it renews, instead of the one notice.</summary>
+    public bool RepeatAutomaticReminders { get; init; }
+
     /// <summary>Daily report-only checks that find problems before they cause an outage (docs/design/proactive-checks.md).</summary>
     public bool ProactiveChecks { get; init; } = true;
 
