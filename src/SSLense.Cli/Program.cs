@@ -835,6 +835,13 @@ static async Task<int> ShowRemindersAsync(IReminderService reminders, Cancellati
             Console.WriteLine($"{certificate.SiteName}: expires {certificate.NotAfter.ToLocalTime():yyyy-MM-dd}, reminders {state}{last}");
         }
 
+        Console.WriteLine();
+        Console.WriteLine("What happens next (an estimate; problems the daily checks would find are not counted):");
+        foreach (var line in (await reminders.GetOutlookAsync(token).ConfigureAwait(false)).Lines)
+        {
+            Console.WriteLine(line);
+        }
+
         return 0;
     }
     catch (Exception exception)

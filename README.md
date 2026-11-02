@@ -266,12 +266,16 @@ Certificates with reminders off or snoozed are not checked, and neither are stop
 In the app, the settings are under **Settings → Reminders** (with **Send sample digest**), the Dashboard has a **Reminders** column, and **Certificate Details** turns reminders on, snoozes them for 7 or 30 days, or turns them off until the certificate is replaced or permanently. From the CLI:
 
 ```powershell
-SSLense.Cli reminders show                                     # settings and each certificate's state
+SSLense.Cli reminders show                                     # settings, each certificate's state, and what happens next
 SSLense.Cli reminders set --start-days 45 --repeat-days 2 --send-at 8 --weekly monday
 SSLense.Cli reminders site --site "Shop" --mode snooze --days 7  # or on, off-until-replaced, off
 SSLense.Cli reminders preview                                  # print today's digest without sending it
 SSLense.Cli reminders send-sample                              # send it, marked as a sample
 ```
+
+**When the next email goes out:** the service checks when it starts and then every hour from that moment, and sends at the first check at or after the send time, if something is due and today isn't already handled. `reminders show` and **Settings → Reminders** show the next check, the next expected email, and each certificate's next reminder. These are estimates: changing a setting, replacing a certificate, restarting the service, or a problem found by the daily checks can change them. Restarting the service runs a check straight away.
+
+**Why an email was or wasn't sent:** every check writes a `Reminder check:` line to the service log, and when the digest is evaluated there is one line per certificate saying whether it was included and why, for example `skipped, reminders start on 15 Jan 2027`.
 
 The design is in [docs/design/expiry-reminders.md](docs/design/expiry-reminders.md).
 

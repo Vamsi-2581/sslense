@@ -18,7 +18,7 @@ internal sealed class RenewalWorker(
 {
     // Hourly checks are cheap: certificates that are not due and retries still backing off
     // are skipped from saved state, and ARI responses are cached by the provider.
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan CheckInterval = ServiceHeartbeat.CheckInterval;
 
     private static readonly string Version =
         (typeof(RenewalWorker).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion

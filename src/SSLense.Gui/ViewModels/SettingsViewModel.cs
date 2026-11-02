@@ -102,6 +102,7 @@ public partial class SettingsViewModel : ObservableObject
     public IReadOnlyList<ChatFormat> ChatFormats { get; } = Enum.GetValues<ChatFormat>();
     public ObservableCollection<ChatOverview> ChatChannels { get; } = [];
     public ObservableCollection<ChannelResult> TestResults { get; } = [];
+    public ObservableCollection<string> ReminderOutlookLines { get; } = [];
     public string PresetHint => SelectedPreset?.Hint ?? string.Empty;
 
     public IAsyncRelayCommand SaveGeneralCommand { get; }
@@ -135,7 +136,15 @@ public partial class SettingsViewModel : ObservableObject
             WeeklySummary = reminders.WeeklySummaryDay?.ToString() ?? "Off";
             await LoadNotificationsAsync(token).ConfigureAwait(true);
             await RefreshServiceCoreAsync(token).ConfigureAwait(true);
+            await LoadReminderOutlookAsync(token).ConfigureAwait(true);
         }, CancellationToken.None);
+    }
+
+    private async Task LoadReminderOutlookAsync(CancellationToken token)
+    {
+        var outlook = await _reminderService.GetOutlookAsync(token).ConfigureAwait(true);
+        ReminderOutlookLines.Clear();
+        foreach (var line in outlook.Lines) ReminderOutlookLines.Add(line);
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -249,6 +258,7 @@ public partial class SettingsViewModel : ObservableObject
                 },
                 ct)
             .ConfigureAwait(true);
+        await LoadReminderOutlookAsync(ct).ConfigureAwait(true);
         ResultMessage = "Reminder settings saved. The service uses them from its next hourly check.";
     }, token);
 

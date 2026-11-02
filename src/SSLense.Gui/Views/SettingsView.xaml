@@ -40,6 +40,12 @@
      <Button Content="Save reminders" Command="{Binding SaveRemindersCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
      <Button Content="Send sample digest" Command="{Binding SendSampleReminderCommand}" ToolTip="Sends today's digest now, marked as a sample. Nothing is recorded, so real reminders are unchanged."/>
     </StackPanel>
+    <TextBlock Text="WHAT HAPPENS NEXT (ESTIMATE)" Style="{StaticResource FieldLabel}" Margin="0,16,0,0"/>
+    <ItemsControl ItemsSource="{Binding ReminderOutlookLines}" AutomationProperties.Name="What happens next">
+     <ItemsControl.ItemTemplate>
+      <DataTemplate><TextBlock Text="{Binding}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,2"/></DataTemplate>
+     </ItemsControl.ItemTemplate>
+    </ItemsControl>
    </StackPanel></GroupBox>
 
    <GroupBox Header="Notifications" Margin="0,0,0,14"><StackPanel>

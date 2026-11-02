@@ -100,6 +100,70 @@ public sealed class ReminderDigestBuilderTests
     }
 
     [Fact]
+    public void Decisions_SayWhyEachCertificateIsSkipped_AndWhenItIsNextExpected()
+    {
+        var beforeWindow = Decision(Imported(45));
+        Assert.False(beforeWindow.Included);
+        Assert.Equal(new DateOnly(2026, 12, 16), beforeWindow.NextReminder);
+        Assert.Contains("reminders start on 16 Dec 2026", beforeWindow.Reason, StringComparison.Ordinal);
+
+        var repeating = Decision(Imported(20) with { LastRemindedAt = Now });
+        Assert.False(repeating.Included);
+        Assert.Equal(new DateOnly(2026, 12, 4), repeating.NextReminder);
+        Assert.Contains("already reminded on 01 Dec 2026", repeating.Reason, StringComparison.Ordinal);
+
+        var noticeSent = Decision(Automatic(25) with { UpcomingNoticeSent = true });
+        Assert.Null(noticeSent.NextReminder);
+        Assert.Contains("one notice was already sent", noticeSent.Reason, StringComparison.Ordinal);
+
+        var snoozed = Decision(Imported(20) with { Reminders = ReminderMode.Snoozed, SnoozedUntil = Now.AddDays(5) });
+        Assert.False(snoozed.Included);
+        Assert.Equal(new DateOnly(2026, 12, 6), snoozed.NextReminder);
+
+        var off = Decision(Imported(20) with { Reminders = ReminderMode.Off });
+        Assert.Null(off.NextReminder);
+    }
+
+    [Fact]
+    public void Decisions_NextRepeat_BecomesDailyInTheLastDays()
+    {
+        var decision = Assert.Single(ReminderDigestBuilder.Build(
+            [Imported(20) with { LastRemindedAt = Now }],
+            Settings with { RepeatDays = 30 },
+            Now,
+            new Dictionary<string, DateTimeOffset>(),
+            weeklySummary: false).Decisions);
+
+        Assert.Equal(new DateOnly(2026, 12, 14), decision.NextReminder);
+    }
+
+    [Theory]
+    [InlineData(20, null)]
+    [InlineData(20, 1)]
+    [InlineData(-2, null)]
+    [InlineData(45, null)]
+    public void Decisions_AgreeWithTheItems(int daysLeft, int? remindedDaysAgo)
+    {
+        var certificate = Imported(daysLeft) with { LastRemindedAt = remindedDaysAgo is { } ago ? Now.AddDays(-ago) : null };
+
+        var digest = Build(certificate);
+
+        Assert.Equal(digest.Items.Count > 0, Assert.Single(digest.Decisions).Included);
+    }
+
+    [Fact]
+    public void Decisions_ServedProblem_IncludesAnOtherwiseSkippedCertificate()
+    {
+        var digest = ReminderDigestBuilder.Build(
+            [Automatic(25) with { UpcomingNoticeSent = true }], Settings, Now, new Dictionary<string, DateTimeOffset>(), false, null,
+            new Dictionary<string, string> { ["Site"] = "serves something else" });
+
+        var decision = Assert.Single(digest.Decisions);
+        Assert.True(decision.Included);
+        Assert.Equal("api.example.com on site 'Site': included, a check of the served certificate found a problem.", decision.LogLine);
+    }
+
+    [Fact]
     public void AutomaticCertificate_FailingOrOverdue_NeedsAttention()
     {
         var failing = Automatic(40) with { LastRenewalSucceeded = false, ConsecutiveFailures = 2, LastRenewalMessage = "HTTP-01 failed" };
@@ -222,6 +286,8 @@ public sealed class ReminderDigestBuilderTests
             [new ReminderRecord("Site", "AABB", Reminded: true, NoticeSent: false), new ReminderRecord("Auto", "AABB", Reminded: false, NoticeSent: true)],
             digest.ToRecords());
     }
+
+    private static ReminderDecision Decision(ManagedCertificate certificate) => Assert.Single(Build(certificate).Decisions);
 
     private static ReminderDigest Build(ManagedCertificate certificate, DateTimeOffset? scheduledRenewal = null) =>
         ReminderDigestBuilder.Build(

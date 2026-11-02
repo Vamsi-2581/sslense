@@ -1,5 +1,6 @@
 using Moq;
 using SSLense.Core.Config;
+using SSLense.Core.Diagnostics;
 using SSLense.Core.Notifications;
 using SSLense.Core.Reminders;
 using SSLense.Core.Renewal;
@@ -17,6 +18,7 @@ public sealed class ReminderServiceTests
     private readonly Mock<IOutsideRenewalDetector> _detector = new();
     private readonly Mock<IRenewalReadinessCheck> _readiness = new();
     private readonly Mock<IServedCertificateCheck> _served = new();
+    private readonly Mock<IServiceHeartbeatStore> _heartbeat = new();
     private readonly TestClock _clock = new(new DateTimeOffset(2026, 12, 1, 8, 0, 0, TimeSpan.Zero)); // a Tuesday
     private ReminderConfig _settings = new() { SendAtHour = 9 };
 
@@ -215,7 +217,7 @@ public sealed class ReminderServiceTests
         config.Setup(value => value.SaveAsync(It.IsAny<AppConfig>(), It.IsAny<CancellationToken>()))
             .Callback<AppConfig, CancellationToken>((value, _) => saved = value)
             .Returns(Task.CompletedTask);
-        var service = new ReminderService(_certificates, config.Object, ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _clock);
+        var service = new ReminderService(_certificates, config.Object, ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _heartbeat.Object, _clock);
         _clock.Now = _clock.Now.AddHours(1);
         await service.CheckAsync();
         Assert.Empty(_sent);
@@ -261,7 +263,7 @@ public sealed class ReminderServiceTests
 
         var results = await CreateService().CheckAsync();
 
-        Assert.Equal("replaced", Assert.Single(results).Message);
+        Assert.Contains(results, result => result.Message == "replaced");
     }
 
     [Fact]
@@ -270,14 +272,16 @@ public sealed class ReminderServiceTests
         await _certificates.UpsertAsync(Imported(daysLeft: 20));
         var service = CreateService();
 
-        Assert.Empty(await service.CheckAsync());          // 08:00, before the send time
+        Assert.Contains("not sending yet", Assert.Single(await service.CheckAsync()).Message, StringComparison.Ordinal); // 08:00
         _clock.Now = _clock.Now.AddHours(1);
         var sentAt = _clock.Now;
-        var result = Assert.Single(await service.CheckAsync());
+        var results = await service.CheckAsync();
         _clock.Now = _clock.Now.AddHours(1);
-        Assert.Empty(await service.CheckAsync());          // 10:00, already sent today
+        Assert.Contains("already handled", Assert.Single(await service.CheckAsync()).Message, StringComparison.Ordinal); // 10:00
 
-        Assert.False(result.Failed);
+        Assert.DoesNotContain(results, result => result.Failed);
+        Assert.Contains(results, result => result.Message == "Reminder check: shop.example.com on site 'Shop': included, the renewal must be ordered, 19 days left.");
+        Assert.Contains(results, result => result.Message.StartsWith("Sent the reminder digest", StringComparison.Ordinal));
         Assert.Single(_sent);
         Assert.Equal(sentAt, Assert.Single(await _certificates.GetAllAsync()).LastRemindedAt);
     }
@@ -324,13 +328,13 @@ public sealed class ReminderServiceTests
             .Returns(Task.CompletedTask);
         var service = CreateService();
 
-        var failed = Assert.Single(await service.CheckAsync());
+        var failed = Assert.Single(await service.CheckAsync(), result => result.Failed);
         Assert.True(failed.Failed);
         Assert.Contains("SMTP offline", failed.Message, StringComparison.Ordinal);
         Assert.Null(Assert.Single(await _certificates.GetAllAsync()).LastRemindedAt);
 
         _clock.Now = _clock.Now.AddHours(1);
-        Assert.False(Assert.Single(await service.CheckAsync()).Failed);
+        Assert.DoesNotContain(await service.CheckAsync(), result => result.Failed);
         Assert.NotNull(Assert.Single(await _certificates.GetAllAsync()).LastRemindedAt);
     }
 
@@ -416,6 +420,73 @@ public sealed class ReminderServiceTests
         Assert.Single(_sent);
     }
 
+    [Fact]
+    public async Task GetOutlookAsync_DueToday_IsExpectedAtTheNextCheck_AndNothingIsSentOrRecorded()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        _clock.Now = _clock.Now.AddHours(2); // 10:00
+        Checked(_clock.Now.AddMinutes(-40));
+
+        var outlook = await CreateService().GetOutlookAsync();
+
+        Assert.Equal(_clock.Now.AddMinutes(20), outlook.NextCheck);
+        Assert.Equal(outlook.NextCheck, outlook.NextEmail);
+        Assert.Equal(new DateOnly(2026, 12, 1), Assert.Single(outlook.Certificates).NextReminder);
+        Assert.Empty(_sent);
+        Assert.Null(Assert.Single(await _certificates.GetAllAsync()).LastRemindedAt);
+        Assert.Null((await _state.GetAsync()).LastDigestDate);
+    }
+
+    [Fact]
+    public async Task GetOutlookAsync_SentToday_ExpectsTheFirstCheckAfterTheSendTimeOnTheRepeatDay()
+    {
+        _settings = new ReminderConfig { SendAtHour = 9, RepeatDays = 3 };
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        var service = CreateService();
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        _clock.Now = _clock.Now.AddMinutes(20); // 09:20
+        Checked(_clock.Now.AddMinutes(-20));    // checks run at 09:00, 10:00 and so on
+
+        var outlook = await service.GetOutlookAsync();
+
+        Assert.Equal(new DateOnly(2026, 12, 4), Assert.Single(outlook.Certificates).NextReminder);
+        Assert.Equal(new DateTimeOffset(2026, 12, 2, 9, 0, 0, TimeSpan.Zero), outlook.NextDigest);
+        Assert.Equal(new DateTimeOffset(2026, 12, 4, 9, 0, 0, TimeSpan.Zero), outlook.NextEmail);
+    }
+
+    [Fact]
+    public async Task GetOutlookAsync_ServiceNotCheckingOrNothingDue_SaysSo()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 20) with { Reminders = ReminderMode.Off });
+        _clock.Now = _clock.Now.AddHours(1);
+        Checked(_clock.Now.AddHours(-3));
+
+        var outlook = await CreateService().GetOutlookAsync();
+
+        Assert.Null(outlook.NextCheck);
+        Assert.Null(outlook.NextEmail);
+        Assert.Contains(outlook.Lines, line => line.Contains("check that it is running", StringComparison.Ordinal));
+        Assert.Contains(outlook.Lines, line => line == "Next email expected: none");
+        Assert.Contains(outlook.Lines, line => line.EndsWith("no reminder expected (reminders are off permanently).", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetOutlookAsync_WeeklySummaryCountsAsTheNextEmail()
+    {
+        _settings = new ReminderConfig { SendAtHour = 9, WeeklySummaryDay = DayOfWeek.Friday };
+        await _certificates.UpsertAsync(Imported(daysLeft: 200));
+        Checked(_clock.Now.AddMinutes(-10)); // checks run at 07:50, 08:50 and so on
+
+        var outlook = await CreateService().GetOutlookAsync();
+
+        Assert.Equal(new DateTimeOffset(2026, 12, 4, 9, 50, 0, TimeSpan.Zero), outlook.NextEmail);
+    }
+
+    private void Checked(DateTimeOffset at) =>
+        _heartbeat.Setup(value => value.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ServiceHeartbeat("test", at, LastCycleStartedAt: at));
+
     /// <summary>A service whose settings are saved and read back, for tests that change them part way through a check.</summary>
     private ReminderService CreateServiceWithSavedSettings(IRenewalService renewal)
     {
@@ -425,14 +496,14 @@ public sealed class ReminderServiceTests
         config.Setup(value => value.SaveAsync(It.IsAny<AppConfig>(), It.IsAny<CancellationToken>()))
             .Callback<AppConfig, CancellationToken>((value, _) => saved = value)
             .Returns(Task.CompletedTask);
-        return new ReminderService(_certificates, config.Object, renewal, _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _clock);
+        return new ReminderService(_certificates, config.Object, renewal, _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _heartbeat.Object, _clock);
     }
 
     private ReminderService CreateService(IRenewalService? renewal = null)
     {
         var config = new Mock<IConfigStore>(MockBehavior.Strict);
         config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => new AppConfig { Reminders = _settings });
-        return new ReminderService(_certificates, config.Object, renewal ?? ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _clock);
+        return new ReminderService(_certificates, config.Object, renewal ?? ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _heartbeat.Object, _clock);
     }
 
     private IRenewalService ScheduledInTenDays()

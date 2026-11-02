@@ -76,6 +76,11 @@ On each hourly check, for every managed certificate, SSLense looks at the site's
 - **Imported certificate:** at the next hourly check, the record is updated (thumbprint, dates, issuer), and a "replaced outside SSLense" notice is sent like a successful renewal: always to the Event Log, and to email and chat when success notifications are on. The reminder setting resets unless it is Off permanently.
 - **Automatic certificate:** the record is not changed, because the next renewal would put a Let's Encrypt certificate back. The digest and the health check report that the binding was changed outside SSLense, and suggest either adopting the new certificate or reissuing.
 
+### 4.6 Seeing what the reminders are doing
+
+- **Service log:** every hourly check logs what it decided, so silence never needs interpreting: not sending yet, today already handled, or the result. When the digest is evaluated, normally once a day and again after a settings change or a failed send, there is also one line per certificate saying whether it was included and why. The reasons come from the same decision that builds the digest, so the two cannot disagree. Email addresses and keys are not logged.
+- **Outlook:** `reminders show` and Settings → Reminders show the next service check, the next digest check, the next expected email, and each certificate's next reminder. The next check is counted from the service's heartbeat; when it has not checked for two hours, the outlook says so. It is an estimate: the daily checks are not run for it, so a problem they would find is not counted, and nothing is sent or recorded.
+
 ## 5. Data and configuration changes
 
 | File | Change | Schema |
@@ -88,7 +93,7 @@ Migrations follow the existing pattern: the old file is backed up first, and new
 
 ## 6. Product surfaces
 
-- **Settings:** a new Reminders group (section 3) with **Send sample digest**, which sends today's digest as it would be sent, marked as a sample, without recording anything.
+- **Settings:** a new Reminders group (section 3) with **Send sample digest**, which sends today's digest as it would be sent, marked as a sample, without recording anything, and the outlook (section 4.6).
 - **Dashboard:** a Reminders column (On, Snoozed until D, Off until replaced, Off).
 - **Certificate Details:** the reminder setting, when the last reminder was sent, and the next expected one.
 - **CLI:** `reminders show`, `reminders set --start-days --repeat-days --send-at --notices on|off --repeat-automatic on|off --weekly off|<day>`, `reminders site` (section 4.3), `reminders preview` (prints the digest without sending it), `reminders send-sample`.
