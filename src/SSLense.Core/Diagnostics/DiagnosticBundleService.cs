@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -46,6 +47,9 @@ internal sealed class DiagnosticBundleService(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
+        // Keeps "Müller & Sons" as written instead of ü and &, so the redaction below can match it. These files
+        // are read as text and never placed in a web page, where the stricter default would matter.
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new JsonStringEnumConverter() }
     };
 
@@ -254,7 +258,7 @@ internal sealed class DiagnosticBundleService(
             .Where(name => name.Length > 2)
             .OrderByDescending(name => name.Length)
             .Select(name => (
-                new Regex($@"(?<![A-Za-z0-9.\-]){Regex.Escape(name)}(?![A-Za-z0-9\-])", RegexOptions.IgnoreCase),
+                new Regex($@"(?<![A-Za-z0-9.\-]){MatchText(name)}(?![A-Za-z0-9\-])", RegexOptions.IgnoreCase),
                 name.Contains('.') ? $"host-{++hostIndex}.example" : $"site-{++siteIndex}"))
             .ToArray();
     }
@@ -273,10 +277,17 @@ internal sealed class DiagnosticBundleService(
             .Where(segments => segments.Length > 1)
             .OrderByDescending(segments => segments.Sum(segment => segment.Length))
             .Select(segments => (
-                new Regex($@"(?<![A-Za-z0-9.\-_]){string.Join(@"[\\/]{1,2}", segments.Select(Regex.Escape))}(?![A-Za-z0-9\-_])", RegexOptions.IgnoreCase),
+                new Regex($@"(?<![A-Za-z0-9.\-_]){string.Join(@"[\\/]{1,2}", segments.Select(MatchText))}(?![A-Za-z0-9\-_])", RegexOptions.IgnoreCase),
                 $"folder-{++index}"))
             .ToArray();
     }
+
+    /// <summary>A pattern for this text. JSON still escapes characters such as emoji, so those match either way.</summary>
+    private static string MatchText(string text) => string.Concat(text.EnumerateRunes().Select(rune =>
+    {
+        var value = rune.ToString();
+        return rune.IsBmp ? Regex.Escape(value) : $@"(?:{value}|\\u{(int)value[0]:X4}\\u{(int)value[1]:X4})";
+    }));
 
     private static string ApplyHostMap(string text, IReadOnlyList<(Regex Pattern, string Replacement)> map) =>
         map.Aggregate(text, (current, item) => item.Pattern.Replace(current, item.Replacement));

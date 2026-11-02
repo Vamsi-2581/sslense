@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using Moq;
 using SSLense.Core.Certificates;
 using SSLense.Core.Config;
@@ -76,6 +77,26 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
         Assert.DoesNotContain("inetpub", everything, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("folder-1", entries["iis-sites.json"], StringComparison.Ordinal);
         Assert.Contains(@"folder-1\.well-known", entries["logs/sslense-20261028.log"], StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Müller GmbH")]
+    [InlineData("Smith & Sons")]
+    [InlineData("O'Brien+Co")]
+    [InlineData("日本語")]
+    [InlineData("Shop 🚀")]
+    public async Task CreateAsync_RedactHosts_ReplacesNamesThatJsonWouldEscape(string name)
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, name, "Started", $@"D:\clients\{name}\web", [])]);
+
+        var result = await CreateService(iis).CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        using var sites = JsonDocument.Parse(ReadEntries(result.Path)["iis-sites.json"]);
+        var site = sites.RootElement[0];
+        Assert.StartsWith("site-", site.GetProperty("name").GetString(), StringComparison.Ordinal);
+        Assert.Equal("folder-1", site.GetProperty("physicalPath").GetString());
     }
 
     [Fact]
