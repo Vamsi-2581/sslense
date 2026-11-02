@@ -47,6 +47,8 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int reminderRepeatDays = 1;
     [ObservableProperty] private HourOption? reminderSendAt;
     [ObservableProperty] private bool upcomingRenewalNotices = true;
+    [ObservableProperty] private bool repeatAutomaticReminders;
+    [ObservableProperty] private bool proactiveChecks = true;
     [ObservableProperty] private string weeklySummary = "Off";
 
     [ObservableProperty] private string serviceStatus = "Checking...";
@@ -100,6 +102,7 @@ public partial class SettingsViewModel : ObservableObject
     public IReadOnlyList<ChatFormat> ChatFormats { get; } = Enum.GetValues<ChatFormat>();
     public ObservableCollection<ChatOverview> ChatChannels { get; } = [];
     public ObservableCollection<ChannelResult> TestResults { get; } = [];
+    public ObservableCollection<string> ReminderOutlookLines { get; } = [];
     public string PresetHint => SelectedPreset?.Hint ?? string.Empty;
 
     public IAsyncRelayCommand SaveGeneralCommand { get; }
@@ -128,10 +131,20 @@ public partial class SettingsViewModel : ObservableObject
             ReminderRepeatDays = reminders.RepeatDays;
             ReminderSendAt = Hours[reminders.SendAtHour];
             UpcomingRenewalNotices = reminders.UpcomingRenewalNotices;
+            RepeatAutomaticReminders = reminders.RepeatAutomaticReminders;
+            ProactiveChecks = reminders.ProactiveChecks;
             WeeklySummary = reminders.WeeklySummaryDay?.ToString() ?? "Off";
             await LoadNotificationsAsync(token).ConfigureAwait(true);
             await RefreshServiceCoreAsync(token).ConfigureAwait(true);
+            await LoadReminderOutlookAsync(token).ConfigureAwait(true);
         }, CancellationToken.None);
+    }
+
+    private async Task LoadReminderOutlookAsync(CancellationToken token)
+    {
+        var outlook = await _reminderService.GetOutlookAsync(token).ConfigureAwait(true);
+        ReminderOutlookLines.Clear();
+        foreach (var line in outlook.Lines) ReminderOutlookLines.Add(line);
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -239,10 +252,13 @@ public partial class SettingsViewModel : ObservableObject
                     RepeatDays = ReminderRepeatDays,
                     SendAtHour = ReminderSendAt?.Hour ?? 9,
                     UpcomingRenewalNotices = UpcomingRenewalNotices,
+                    RepeatAutomaticReminders = RepeatAutomaticReminders,
+                    ProactiveChecks = ProactiveChecks,
                     WeeklySummaryDay = Enum.TryParse<DayOfWeek>(WeeklySummary, out var day) ? day : null
                 },
                 ct)
             .ConfigureAwait(true);
+        await LoadReminderOutlookAsync(ct).ConfigureAwait(true);
         ResultMessage = "Reminder settings saved. The service uses them from its next hourly check.";
     }, token);
 

@@ -5,6 +5,7 @@ using SSLense.Core.Certificates;
 using SSLense.Core.Config;
 using SSLense.Core.Diagnostics;
 using SSLense.Core.Iis;
+using SSLense.Core.Reminders;
 using SSLense.Core.Validation;
 using SSLense.Core.WindowsServices;
 using Xunit;
@@ -23,7 +24,7 @@ public sealed class HealthCheckServiceTests
         foreach (var name in new[]
                  {
                      "Configuration", "Managed certificates", "Interrupted operations", "Renewal service",
-                     "Service heartbeat", "IIS", "Certificate installed: My Site", "HTTPS bindings: My Site",
+                     "Service heartbeat", "IIS", "Certificate installed: My Site", "HTTPS bindings: My Site", "Served certificate: My Site",
                      "Expiry: My Site", "Renewal history: My Site", "DNS: example.com",
                      "HTTP reachability: example.com (My Site)", "Let's Encrypt staging", "Notifications", "Reminders"
                  })
@@ -107,6 +108,14 @@ public sealed class HealthCheckServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_ServedCertificateDiffers_IsAFailureWithAFix()
+    {
+        var results = await CreateService(servedProblem: "example.com serves a different certificate from the one SSLense expects.").RunAsync();
+
+        AssertStatus(results, "Served certificate: My Site", HealthStatus.Fail, "SSLense.Cli details");
+    }
+
+    [Fact]
     public async Task RunQuickAsync_MutedCertificateExpiringThisWeek_IsAWarning()
     {
         var muted = Certificate() with { NotAfter = DateTimeOffset.UtcNow.AddDays(3), Reminders = ReminderMode.Off };
@@ -135,7 +144,8 @@ public sealed class HealthCheckServiceTests
         AppConfig? config = null,
         Mock<IIisService>? iis = null,
         Mock<IHostResolver>? resolver = null,
-        HttpStatusCode acmeStatus = HttpStatusCode.OK)
+        HttpStatusCode acmeStatus = HttpStatusCode.OK,
+        string? servedProblem = null)
     {
         certificate ??= Certificate();
         config ??= new AppConfig
@@ -182,13 +192,17 @@ public sealed class HealthCheckServiceTests
 
         var pending = new Mock<IPendingRequestStore>(MockBehavior.Strict);
         pending.Setup(value => value.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var served = new Mock<IServedCertificateCheck>(MockBehavior.Strict);
+        served.Setup(value => value.CheckAsync(It.IsAny<ManagedCertificate>(), It.IsAny<IisSite>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(servedProblem);
 
         return new HealthCheckService(
             configStore.Object, managed.Object, journal.Object, serviceManager.Object, heartbeatStore.Object,
             iis.Object, store.Object, preflight.Object, resolver.Object,
             new HttpClient(new StubHandler(acmeStatus)),
             CertificateAuthorityRegistry.BuiltInOnly,
-            pending.Object);
+            pending.Object,
+            served.Object);
     }
 
     /// <summary>Answers every request locally, so the test never contacts Let's Encrypt.</summary>

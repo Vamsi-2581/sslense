@@ -33,7 +33,8 @@ internal sealed class HealthCheckService(
     IHostResolver hostResolver,
     HttpClient httpClient,
     ICertificateAuthorityRegistry authorities,
-    IPendingRequestStore pendingRequests) : IHealthCheckService
+    IPendingRequestStore pendingRequests,
+    Reminders.IServedCertificateCheck servedCheck) : IHealthCheckService
 {
     // The service checks hourly; three missed cycles means it is stuck or not running its loop.
     private static readonly TimeSpan HeartbeatStaleAfter = TimeSpan.FromHours(3);
@@ -114,6 +115,8 @@ internal sealed class HealthCheckService(
                     .ConfigureAwait(false);
                 await Check($"HTTPS bindings: {site}", () => Task.FromResult(CheckBindings(certificate, sites)))
                     .ConfigureAwait(false);
+                await Check($"Served certificate: {site}", () => CheckServedAsync(certificate, sites, cancellationToken))
+                    .ConfigureAwait(false);
                 await Check($"Expiry: {site}", () => Task.FromResult(CheckExpiry(certificate))).ConfigureAwait(false);
                 if (certificate.Source == CertificateSource.Imported)
                 {
@@ -179,6 +182,28 @@ internal sealed class HealthCheckService(
         await Check("Notifications", () => Task.FromResult(CheckNotifications(config))).ConfigureAwait(false);
         await Check("Reminders", () => Task.FromResult(CheckReminders(config, certificates))).ConfigureAwait(false);
         return results;
+    }
+
+    /// <summary>What IIS really serves from this server, which may differ from what visitors receive through a CDN or proxy.</summary>
+    private async Task<HealthCheckResult> CheckServedAsync(
+        ManagedCertificate certificate,
+        IReadOnlyList<IisSite> sites,
+        CancellationToken cancellationToken)
+    {
+        var name = $"Served certificate: {certificate.SiteName}";
+        var site = sites.FirstOrDefault(value => string.Equals(value.Name, certificate.SiteName, StringComparison.OrdinalIgnoreCase));
+        if (site is null || site.State != Reminders.ServedCertificateCheck.StartedState)
+        {
+            return Pass(name, site is null ? "Not checked: the IIS site was not found." : $"Not checked: the IIS site is {site.State}.");
+        }
+
+        return await servedCheck.CheckAsync(certificate, site, cancellationToken).ConfigureAwait(false) is { } problem
+            ? new HealthCheckResult(
+                name,
+                HealthStatus.Fail,
+                problem,
+                $"Compare the site's HTTPS bindings in IIS Manager with 'SSLense.Cli details --site \"{certificate.SiteName}\"'.")
+            : Pass(name, "This server serves the expected certificate for every host name.");
     }
 
     /// <summary>

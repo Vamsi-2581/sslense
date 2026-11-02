@@ -5,10 +5,14 @@ namespace SSLense.Core.Reminders;
 
 /// <param name="LastDigestDate">The server-local day the daily digest was last handled (sent, or nothing was due).</param>
 /// <param name="LastWeeklySummaryDate">The day the weekly summary was last sent.</param>
+/// <param name="CheckFailures">Consecutive days each proactive check has failed, by check and site.</param>
+/// <param name="LastChecksDate">The day failures were last counted, so a retried digest does not count a day twice.</param>
 public sealed record ReminderState(
     DateOnly? LastDigestDate = null,
     DateOnly? LastWeeklySummaryDate = null,
-    int SchemaVersion = StateSchema.ReminderState);
+    int SchemaVersion = StateSchema.ReminderState,
+    IReadOnlyDictionary<string, int>? CheckFailures = null,
+    DateOnly? LastChecksDate = null);
 
 public interface IReminderStateStore
 {

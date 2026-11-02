@@ -254,17 +254,28 @@ Once a day (from 09:00 server time by default) the service sends one digest to e
 - an automatic renewal that is failing or overdue;
 - an expired certificate.
 
-Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. Renewal failures are still sent immediately as they happen, even for a certificate whose reminders are off. A certificate from another provider that is replaced outside SSLense, for example through IIS Manager, is noticed within the hour and its reminders stop.
+Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. To keep hearing about them until they renew, turn on **Keep reminding about Let's Encrypt certificates until they renew** under **Settings → Reminders**, or run `SSLense.Cli reminders set --repeat-automatic on`; it is off by default and uses the same repeat interval. Renewal failures are still sent immediately as they happen, even for a certificate whose reminders are off. A certificate from another provider that is replaced outside SSLense, for example through IIS Manager, is noticed within the hour and its reminders stop.
+
+Two daily checks find problems before they cause an outage. They only report, and a problem appears in the digest after two daily failures in a row:
+
+- **Renewal readiness:** in the 30 days before each Let's Encrypt renewal, the pre-flight checks run for that site. A failure means renewal is likely to fail. The checks run from the server itself, so a pass does not prove that Let's Encrypt can reach the site. The challenge-folder check briefly writes and removes one small file in the site's `.well-known\acme-challenge` folder.
+- **Served certificate:** SSLense connects to each host's port 443 binding on the server and compares what is served with what it expects. This shows what IIS serves, not necessarily what visitors receive through a CDN or proxy.
+
+Certificates with reminders off or snoozed are not checked, and neither are stopped sites (served certificate) or sites with an operation in progress. Turn the checks off under **Settings → Reminders** or with `SSLense.Cli reminders set --checks off`. **Health** shows the served-certificate result on demand, and `reminders preview` shows current problems straight away.
 
 In the app, the settings are under **Settings → Reminders** (with **Send sample digest**), the Dashboard has a **Reminders** column, and **Certificate Details** turns reminders on, snoozes them for 7 or 30 days, or turns them off until the certificate is replaced or permanently. From the CLI:
 
 ```powershell
-SSLense.Cli reminders show                                     # settings and each certificate's state
+SSLense.Cli reminders show                                     # settings, each certificate's state, and what happens next
 SSLense.Cli reminders set --start-days 45 --repeat-days 2 --send-at 8 --weekly monday
 SSLense.Cli reminders site --site "Shop" --mode snooze --days 7  # or on, off-until-replaced, off
 SSLense.Cli reminders preview                                  # print today's digest without sending it
 SSLense.Cli reminders send-sample                              # send it, marked as a sample
 ```
+
+**When the next email goes out:** the service checks when it starts and then every hour from that moment, and sends at the first check at or after the send time, if something is due and today isn't already handled. `reminders show` and **Settings → Reminders** show the next check, the next expected email, and each certificate's next reminder. These are estimates: changing a setting, replacing a certificate, restarting the service, or a problem found by the daily checks can change them. Restarting the service runs a check straight away.
+
+**Why an email was or wasn't sent:** every check writes a `Reminder check:` line to the service log, and when the digest is evaluated there is one line per certificate saying whether it was included and why, for example `skipped, reminders start on 15 Jan 2027`.
 
 The design is in [docs/design/expiry-reminders.md](docs/design/expiry-reminders.md).
 

@@ -44,6 +44,6 @@ public interface IManagedCertificateStore
     Task RemoveAsync(string siteName, CancellationToken cancellationToken = default);
 }
 
-/// <param name="Reminded">Listed as needing attention, which starts the repeat interval again.</param>
-/// <param name="NoticeSent">Listed as an upcoming automatic renewal, which is said only once.</param>
+/// <param name="Reminded">Listed as needing attention or as a repeated automatic reminder, which starts the repeat interval again.</param>
+/// <param name="NoticeSent">Listed as an upcoming automatic renewal, so the one notice is not sent as well.</param>
 public sealed record ReminderRecord(string SiteName, string Thumbprint, bool Reminded, bool NoticeSent);

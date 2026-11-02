@@ -11,7 +11,11 @@ public sealed record ServiceHeartbeat(
     DateTimeOffset? LastCycleCompletedAt = null,
     bool? LastCycleSucceeded = null,
     string? LastCycleMessage = null,
-    int SchemaVersion = StateSchema.ServiceHeartbeat);
+    int SchemaVersion = StateSchema.ServiceHeartbeat)
+{
+    /// <summary>How often the service runs its checks, counted from when it started.</summary>
+    public static readonly TimeSpan CheckInterval = TimeSpan.FromHours(1);
+}
 
 public interface IServiceHeartbeatStore
 {

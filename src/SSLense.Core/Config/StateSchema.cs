@@ -17,9 +17,10 @@ internal static class StateSchema
     /// <summary>
     /// Version 0 had no version field. Version 2 replaced the single SMTP server and generic webhook with
     /// email, chat channels, a heartbeat, and the Event Log (see <see cref="ConfigMigrations"/>). Version 3 adds
-    /// configured certificate authorities. Version 4 adds reminder settings, which default when absent.
+    /// configured certificate authorities. Version 4 adds reminder settings, which default when absent. Version 5 adds
+    /// the proactive-checks and repeat-automatic-reminders settings, which also default when absent.
     /// </summary>
-    public const int Config = 4;
+    public const int Config = 5;
 
     /// <summary>Version 2 stores the certificate snapshot in managed-certificate schema 2.</summary>
     public const int Transactions = 2;
@@ -28,7 +29,8 @@ internal static class StateSchema
 
     public const int PendingRequests = 1;
 
-    public const int ReminderState = 1;
+    /// <summary>Version 2 adds the proactive-check failure counts, which default to none.</summary>
+    public const int ReminderState = 2;
 
     public static void EnsureSupported(int version, int supportedVersion, string path)
     {
