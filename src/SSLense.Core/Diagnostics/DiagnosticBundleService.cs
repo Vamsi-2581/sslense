@@ -161,7 +161,8 @@ internal sealed class DiagnosticBundleService(
             {
                 var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
                 await using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-                await writer.WriteAsync(ApplyHostMap(SecretRedactor.Redact(content), hostMap)).ConfigureAwait(false);
+                // Names first: masking an email address inside a folder path would stop the folder from matching.
+                await writer.WriteAsync(SecretRedactor.Redact(ApplyHostMap(content, hostMap))).ConfigureAwait(false);
             }
         }
 

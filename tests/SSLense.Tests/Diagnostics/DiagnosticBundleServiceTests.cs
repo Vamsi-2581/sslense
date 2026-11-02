@@ -100,6 +100,20 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_RedactHosts_ReplacesAFolderThatContainsAnEmailAddress()
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, "Site", "Started", @"D:\clients\admin@example.com\PrivateProject\web", [])]);
+
+        var result = await CreateService(iis).CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        var entries = ReadEntries(result.Path);
+        Assert.DoesNotContain("PrivateProject", string.Join("\n", entries.Values), StringComparison.Ordinal);
+        Assert.Contains(@"folder-1\.well-known", entries["logs/sslense-20261028.log"], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CreateAsync_WithoutRedaction_KeepsSiteFolders()
     {
         var result = await CreateService().CreateAsync(new DiagnosticBundleRequest(_output));
@@ -165,6 +179,7 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
         fileSystem.Files[Path.Combine(AppPaths.LogDirectory, "sslense-20261028.log")] = string.Join("\n",
             "[INF] Issued for acme-test.sslense.com, thumbprint 6533D7B01A1F3C4BDF85551F375A3EFC4BD45F5F",
             @"[INF] Preparing the challenge in C:\inetpub\sslense\.well-known",
+            @"[INF] Preparing the challenge in D:\clients\admin@example.com\PrivateProject\web\.well-known",
             $"[ERR] SMTP authentication failed: password={LoggedPassword}",
             $"[ERR] POST https://hooks.slack.com/services/T000/B000/{LoggedWebhookToken} returned 500",
             $"[DBG] Authorization: Bearer {LoggedBearer}",
