@@ -19,15 +19,20 @@ public enum ReminderItemKind
     /// <summary>Automatic renewal should have happened more than a day ago.</summary>
     AutomaticRenewalOverdue,
 
+    /// <summary>The daily checks found a problem that is likely to make the coming automatic renewal fail.</summary>
+    RenewalNotReady,
+
     /// <summary>For information: an automatic certificate entered the window and will be renewed on its own.</summary>
     UpcomingAutomaticRenewal
 }
 
+/// <param name="Detail">What a daily check found, for the kinds that report one.</param>
 public sealed record ReminderItem(
     ManagedCertificate Certificate,
     ReminderItemKind Kind,
     int DaysLeft,
-    DateTimeOffset? ScheduledRenewal);
+    DateTimeOffset? ScheduledRenewal,
+    string? Detail = null);
 
 /// <summary>What one day's reminder email says. Built by <see cref="ReminderDigestBuilder"/>; nothing is sent here.</summary>
 /// <param name="All">Every managed certificate, for the weekly summary.</param>
@@ -149,6 +154,9 @@ public sealed record ReminderDigest(
             ReminderItemKind.AutomaticRenewalOverdue =>
                 $"{name} ({source}): should have renewed on {Date(item.ScheduledRenewal)} but has not. Expires " +
                 $"{Date(certificate.NotAfter)}, {item.DaysLeft} days left. Check that the SSLense service is running.",
+            ReminderItemKind.RenewalNotReady =>
+                $"{name} ({source}): renewal is likely to fail. Renewal is due around {Date(item.ScheduledRenewal)}, and a check " +
+                $"on this server found a problem. {item.Detail}",
             _ =>
                 $"{name} ({source}): expires {Date(certificate.NotAfter)}; SSLense will renew it automatically around " +
                 $"{Date(item.ScheduledRenewal)}."
@@ -187,12 +195,14 @@ public static class ReminderDigestBuilder
 
     /// <param name="now">The current time in the server's local offset; days are counted in local dates.</param>
     /// <param name="scheduledRenewals">By site name: when each automatic certificate is scheduled to renew, when known.</param>
+    /// <param name="readinessProblems">By site name: what the daily checks found that should be reported.</param>
     public static ReminderDigest Build(
         IReadOnlyList<ManagedCertificate> certificates,
         ReminderConfig settings,
         DateTimeOffset now,
         IReadOnlyDictionary<string, DateTimeOffset> scheduledRenewals,
-        bool weeklySummary)
+        bool weeklySummary,
+        IReadOnlyDictionary<string, string>? readinessProblems = null)
     {
         var items = new List<ReminderItem>();
         var muted = new List<ManagedCertificate>();
@@ -204,7 +214,7 @@ public static class ReminderDigestBuilder
                 continue;
             }
 
-            if (Classify(certificate, settings, now, scheduledRenewals) is { } item)
+            if (Classify(certificate, settings, now, scheduledRenewals, readinessProblems) is { } item)
             {
                 items.Add(item);
             }
@@ -228,7 +238,8 @@ public static class ReminderDigestBuilder
         ManagedCertificate certificate,
         ReminderConfig settings,
         DateTimeOffset now,
-        IReadOnlyDictionary<string, DateTimeOffset> scheduledRenewals)
+        IReadOnlyDictionary<string, DateTimeOffset> scheduledRenewals,
+        IReadOnlyDictionary<string, string>? readinessProblems)
     {
         var daysLeft = DaysLeft(certificate, now);
         var remaining = certificate.NotAfter - now;
@@ -263,6 +274,14 @@ public static class ReminderDigestBuilder
         {
             return IntervalElapsed(certificate, now, interval)
                 ? new ReminderItem(certificate, ReminderItemKind.AutomaticRenewalOverdue, daysLeft, scheduled)
+                : null;
+        }
+
+        // While a problem is known, the digest must not also say that the certificate will renew on its own.
+        if (readinessProblems is not null && readinessProblems.TryGetValue(certificate.SiteName, out var problem))
+        {
+            return IntervalElapsed(certificate, now, interval)
+                ? new ReminderItem(certificate, ReminderItemKind.RenewalNotReady, daysLeft, scheduled, problem)
                 : null;
         }
 

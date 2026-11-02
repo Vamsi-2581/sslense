@@ -1,6 +1,6 @@
 # Design: renewal readiness and served-certificate checks
 
-Status: proposed, November 2, 2026. Decisions for approval are in section 7.
+Status: approved on November 2, 2026, with the decisions in section 7. Built in the steps in section 8.
 
 ## 1. Problem
 
@@ -71,6 +71,6 @@ Both follow the existing pattern: a backup before migration, and refusal of newe
 
 | Step | Content |
 |---|---|
-| 1 | Readiness checks: the setting, failure counts, digest lines, and tests |
+| 1 | Readiness checks: the setting, failure counts, digest lines, and tests. **Done.** |
 | 2 | Served-certificate check: the digest lines, the health entry, and tests |
 | 3 | GUI setting, CLI option, README, and release as 0.12.0 after the first feedback from the launch posts |

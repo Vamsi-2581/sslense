@@ -15,6 +15,7 @@ public sealed class ReminderServiceTests
     private readonly Mock<INotifier> _notifier = new(MockBehavior.Strict);
     private readonly List<NotificationMessage> _sent = [];
     private readonly Mock<IOutsideRenewalDetector> _detector = new();
+    private readonly Mock<IRenewalReadinessCheck> _readiness = new();
     private readonly TestClock _clock = new(new DateTimeOffset(2026, 12, 1, 8, 0, 0, TimeSpan.Zero)); // a Tuesday
     private ReminderConfig _settings = new() { SendAtHour = 9 };
 
@@ -26,6 +27,109 @@ public sealed class ReminderServiceTests
             .Callback<NotificationMessage, CancellationToken>((message, _) => _sent.Add(message))
             .Returns(Task.CompletedTask);
         _detector.Setup(value => value.DetectAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        NotReady();
+    }
+
+    [Fact]
+    public async Task CheckAsync_ReadinessProblem_IsReportedOnlyOnTheSecondDayInARow()
+    {
+        await _certificates.UpsertAsync(Automatic(daysLeft: 40));
+        NotReady("Api");
+        var service = CreateService();
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await service.CheckAsync();
+        Assert.Empty(_sent);
+
+        _clock.Now = _clock.Now.AddDays(1);
+        await service.CheckAsync();
+
+        var message = Assert.Single(_sent);
+        Assert.Contains("renewal is likely to fail", message.Body, StringComparison.Ordinal);
+        Assert.Contains("'HTTP binding: api.example.com' failed", message.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ReadinessPass_ResetsTheCount()
+    {
+        await _certificates.UpsertAsync(Automatic(daysLeft: 40));
+        var service = CreateService();
+        _clock.Now = _clock.Now.AddHours(1);
+
+        NotReady("Api");
+        await service.CheckAsync();
+        _clock.Now = _clock.Now.AddDays(1);
+        Ready("Api");
+        await service.CheckAsync();
+        _clock.Now = _clock.Now.AddDays(1);
+        NotReady("Api");
+        await service.CheckAsync();
+
+        Assert.Empty(_sent);
+    }
+
+    [Fact]
+    public async Task CheckAsync_RetryAfterAFailedSend_DoesNotCountTheSameDayTwice()
+    {
+        await _certificates.UpsertAsync(Automatic(daysLeft: 40));
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        NotReady("Api");
+        _notifier.SetupSequence(value => value.NotifyAsync(It.IsAny<NotificationMessage>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("SMTP offline"))
+            .Returns(Task.CompletedTask);
+        var service = CreateService();
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await service.CheckAsync();
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+
+        var retried = (NotificationMessage)_notifier.Invocations[^1].Arguments[0];
+        Assert.DoesNotContain("likely to fail", retried.Body, StringComparison.Ordinal);
+        Assert.Equal(new DateOnly(2026, 12, 1), (await _state.GetAsync()).LastDigestDate);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_ShowsAReadinessProblemStraightAway_AndCountsNothing()
+    {
+        await _certificates.UpsertAsync(Automatic(daysLeft: 40));
+        NotReady("Api");
+
+        var digest = await CreateService().PreviewAsync();
+
+        Assert.Equal(ReminderItemKind.RenewalNotReady, Assert.Single(digest.Items).Kind);
+        Assert.Null((await _state.GetAsync()).CheckFailures);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ChecksTurnedOff_DoesNotRunThem()
+    {
+        await _certificates.UpsertAsync(Automatic(daysLeft: 40));
+        _settings = _settings with { ProactiveChecks = false };
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await CreateService().CheckAsync();
+
+        _readiness.Verify(value => value.CheckAsync(
+                It.IsAny<IReadOnlyList<ManagedCertificate>>(), It.IsAny<IReadOnlyDictionary<string, DateTimeOffset>>(),
+                It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Never());
+    }
+
+    [Fact]
+    public async Task CheckAsync_ChecksThatCannotRun_StillSendTheDigest()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        _readiness.Setup(value => value.CheckAsync(
+                It.IsAny<IReadOnlyList<ManagedCertificate>>(), It.IsAny<IReadOnlyDictionary<string, DateTimeOffset>>(),
+                It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("IIS cannot be read"));
+        _clock.Now = _clock.Now.AddHours(1);
+
+        var results = await CreateService().CheckAsync();
+
+        Assert.Single(_sent);
+        Assert.Contains(results, result => result.Failed && result.Message.Contains("IIS cannot be read", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -211,8 +315,33 @@ public sealed class ReminderServiceTests
     {
         var config = new Mock<IConfigStore>(MockBehavior.Strict);
         config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => new AppConfig { Reminders = _settings });
-        return new ReminderService(_certificates, config.Object, renewal ?? Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
+        return new ReminderService(_certificates, config.Object, renewal ?? ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _clock);
     }
+
+    private IRenewalService ScheduledInTenDays()
+    {
+        var renewal = new Mock<IRenewalService>();
+        renewal.Setup(value => value.GetScheduledRenewalAsync(It.IsAny<ManagedCertificate>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => _clock.Now.AddDays(10));
+        return renewal.Object;
+    }
+
+    private void NotReady(params string[] sites) => Readiness(new RenewalReadinessResult(
+        sites.ToDictionary(site => site, _ => "'HTTP binding: api.example.com' failed: Add an IIS HTTP binding on port 80 for this host."),
+        [],
+        []));
+
+    private void Ready(params string[] sites) => Readiness(new RenewalReadinessResult(new Dictionary<string, string>(), sites, []));
+
+    private void Readiness(RenewalReadinessResult result) =>
+        _readiness.Setup(value => value.CheckAsync(
+                It.IsAny<IReadOnlyList<ManagedCertificate>>(), It.IsAny<IReadOnlyDictionary<string, DateTimeOffset>>(),
+                It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+
+    private ManagedCertificate Automatic(int daysLeft) => new(
+        "Api", ["api.example.com"], "admin@example.com", "CCDD", _clock.Now.AddDays(daysLeft - 90), _clock.Now.AddDays(daysLeft),
+        LastRenewalSucceeded: true, UpcomingNoticeSent: true);
 
     private ManagedCertificate Imported(int daysLeft) => new(
         "Shop", ["shop.example.com"], "", "AABB", _clock.Now.AddDays(daysLeft - 365), _clock.Now.AddDays(daysLeft),

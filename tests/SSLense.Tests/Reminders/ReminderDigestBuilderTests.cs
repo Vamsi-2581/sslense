@@ -54,6 +54,34 @@ public sealed class ReminderDigestBuilderTests
     }
 
     [Fact]
+    public void ReadinessProblem_ReplacesTheRenewalNotice_AndFollowsTheRepeat()
+    {
+        var problems = new Dictionary<string, string> { ["Site"] = "'HTTP binding: api.example.com' failed." };
+        var scheduled = new Dictionary<string, DateTimeOffset> { ["Site"] = Now.AddDays(5) };
+
+        var digest = ReminderDigestBuilder.Build([Automatic(25)], Settings, Now, scheduled, false, problems);
+        var item = Assert.Single(digest.Items);
+        Assert.Equal(ReminderItemKind.RenewalNotReady, item.Kind);
+        var body = digest.ToMessage("SERVER01").Body;
+        Assert.Contains("renewal is likely to fail. Renewal is due around 06 Dec 2026", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("will renew it automatically", body, StringComparison.Ordinal);
+
+        // Reminded yesterday, repeat every 3 days: no line today, and no "will renew" notice in its place.
+        Assert.Empty(ReminderDigestBuilder.Build([Automatic(25) with { LastRemindedAt = Now.AddDays(-1) }], Settings, Now, scheduled, false, problems).Items);
+    }
+
+    [Fact]
+    public void FailingRenewal_TakesPriorityOverAReadinessProblem()
+    {
+        var failing = Automatic(25) with { LastRenewalSucceeded = false, ConsecutiveFailures = 1, LastRenewalMessage = "HTTP-01 failed" };
+
+        var digest = ReminderDigestBuilder.Build(
+            [failing], Settings, Now, new Dictionary<string, DateTimeOffset>(), false, new Dictionary<string, string> { ["Site"] = "x" });
+
+        Assert.Equal(ReminderItemKind.AutomaticRenewalFailing, Assert.Single(digest.Items).Kind);
+    }
+
+    [Fact]
     public void ExpiredCertificate_IsRemindedDaily()
     {
         var expired = Imported(-2) with { LastRemindedAt = Now.AddDays(-1) };

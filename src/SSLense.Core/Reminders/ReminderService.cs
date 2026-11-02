@@ -53,9 +53,13 @@ internal sealed class ReminderService(
     IReminderStateStore stateStore,
     INotifier notifier,
     IOutsideRenewalDetector outsideRenewals,
+    IRenewalReadinessCheck readinessCheck,
     TimeProvider? timeProvider = null) : IReminderService
 {
     public const int MaximumSnoozeDays = 90;
+
+    /// <summary>A brief outage or a site restart should not cause an email.</summary>
+    private const int FailuresBeforeReporting = 2;
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -90,11 +94,15 @@ internal sealed class ReminderService(
         }
 
         var weekly = settings.WeeklySummaryDay == now.DayOfWeek && state.LastWeeklySummaryDate != today;
-        var digest = await BuildAsync(config, now, weekly, cancellationToken).ConfigureAwait(false);
+        var build = await BuildAsync(config, now, weekly, state, cancellationToken).ConfigureAwait(false);
+        var digest = build.Digest;
+        state = state with { CheckFailures = build.CheckFailures, LastChecksDate = today };
+        var results = build.Readiness.Errors.Select(error => new ReminderCheckResult(error, Failed: true)).ToList();
         if (!digest.HasContent)
         {
             await stateStore.SaveAsync(state with { LastDigestDate = today }, CancellationToken.None).ConfigureAwait(false);
-            return [new ReminderCheckResult("No certificate needs a reminder today.")];
+            results.Add(new ReminderCheckResult("No certificate needs a reminder today."));
+            return results;
         }
 
         // Recorded only after delivery, so a failed send is retried at the next hourly check.
@@ -104,7 +112,9 @@ internal sealed class ReminderService(
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            return [new ReminderCheckResult($"Could not send the reminder digest: {exception.Message} It will be retried at the next check.", Failed: true)];
+            await stateStore.SaveAsync(state, CancellationToken.None).ConfigureAwait(false);
+            results.Add(new ReminderCheckResult($"Could not send the reminder digest: {exception.Message} It will be retried at the next check.", Failed: true));
+            return results;
         }
 
         await managedStore.RecordRemindersAsync(digest.ToRecords(), now, CancellationToken.None).ConfigureAwait(false);
@@ -112,23 +122,25 @@ internal sealed class ReminderService(
                 state with { LastDigestDate = today, LastWeeklySummaryDate = weekly ? today : state.LastWeeklySummaryDate },
                 CancellationToken.None)
             .ConfigureAwait(false);
-        return [new ReminderCheckResult(
+        results.Add(new ReminderCheckResult(
             $"Sent the reminder digest: {digest.NeedsAttention.Count} need attention, {digest.Upcoming.Count} upcoming automatic renewal(s)" +
-            $"{(weekly ? ", weekly summary" : string.Empty)}.")];
+            $"{(weekly ? ", weekly summary" : string.Empty)}."));
+        return results;
     }
 
     public async Task<ReminderDigest> PreviewAsync(CancellationToken cancellationToken = default)
     {
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var now = _time.GetLocalNow();
-        return await BuildAsync(config, now, weeklySummary: config.Reminders.WeeklySummaryDay == now.DayOfWeek, cancellationToken)
+        var build = await BuildAsync(config, now, weeklySummary: config.Reminders.WeeklySummaryDay == now.DayOfWeek, countFrom: null, cancellationToken)
             .ConfigureAwait(false);
+        return build.Digest;
     }
 
     public async Task<ReminderDigest> SendSampleAsync(CancellationToken cancellationToken = default)
     {
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var digest = await BuildAsync(config, _time.GetLocalNow(), weeklySummary: false, cancellationToken).ConfigureAwait(false);
+        var digest = (await BuildAsync(config, _time.GetLocalNow(), weeklySummary: false, countFrom: null, cancellationToken).ConfigureAwait(false)).Digest;
         if (!digest.HasContent)
         {
             digest = digest with { IsWeeklySummary = true };
@@ -178,10 +190,15 @@ internal sealed class ReminderService(
         }
     }
 
-    private async Task<ReminderDigest> BuildAsync(
+    /// <param name="countFrom">
+    /// The state to count check failures from, for the real digest, which reports a problem only after two daily failures
+    /// in a row. Null for a preview or sample, which shows every current problem and counts nothing.
+    /// </param>
+    private async Task<(ReminderDigest Digest, RenewalReadinessResult Readiness, IReadOnlyDictionary<string, int> CheckFailures)> BuildAsync(
         AppConfig config,
         DateTimeOffset now,
         bool weeklySummary,
+        ReminderState? countFrom,
         CancellationToken cancellationToken)
     {
         var certificates = await managedStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
@@ -202,6 +219,62 @@ internal sealed class ReminderService(
             }
         }
 
-        return ReminderDigestBuilder.Build(certificates, config.Reminders, now, scheduled, weeklySummary);
+        var readiness = config.Reminders.ProactiveChecks
+            ? await RunReadinessAsync(certificates, scheduled, now, cancellationToken).ConfigureAwait(false)
+            : RenewalReadinessResult.None;
+        var failures = countFrom is null || !config.Reminders.ProactiveChecks
+            ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            : CountFailures(countFrom, readiness, DateOnly.FromDateTime(now.DateTime));
+        var report = countFrom is null
+            ? readiness.Problems
+            : readiness.Problems
+                .Where(problem => failures.GetValueOrDefault(ReadinessKey(problem.Key)) >= FailuresBeforeReporting)
+                .ToDictionary(problem => problem.Key, problem => problem.Value, StringComparer.OrdinalIgnoreCase);
+        var digest = ReminderDigestBuilder.Build(certificates, config.Reminders, now, scheduled, weeklySummary, report);
+        return (digest, readiness, failures);
     }
+
+    private async Task<RenewalReadinessResult> RunReadinessAsync(
+        IReadOnlyList<ManagedCertificate> certificates,
+        IReadOnlyDictionary<string, DateTimeOffset> scheduled,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await readinessCheck.CheckAsync(certificates, scheduled, now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Reminders matter more than the checks: the digest still goes out without them.
+            return new RenewalReadinessResult(
+                new Dictionary<string, string>(),
+                [],
+                [$"Could not run the renewal readiness checks: {exception.Message}"]);
+        }
+    }
+
+    /// <summary>
+    /// The new consecutive-failure counts. A day counts once even when a failed send makes the digest run again that day.
+    /// A pass resets a site's count; a site that was not checked, for example because it was busy, keeps its count.
+    /// </summary>
+    private static Dictionary<string, int> CountFailures(ReminderState state, RenewalReadinessResult readiness, DateOnly today)
+    {
+        var counts = new Dictionary<string, int>(state.CheckFailures ?? new Dictionary<string, int>(), StringComparer.OrdinalIgnoreCase);
+        foreach (var site in readiness.Passed)
+        {
+            counts.Remove(ReadinessKey(site));
+        }
+
+        var increment = state.LastChecksDate == today ? 0 : 1;
+        foreach (var site in readiness.Problems.Keys)
+        {
+            var key = ReadinessKey(site);
+            counts[key] = Math.Max(counts.GetValueOrDefault(key) + increment, 1);
+        }
+
+        return counts;
+    }
+
+    private static string ReadinessKey(string siteName) => $"readiness:{siteName}";
 }
