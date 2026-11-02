@@ -232,7 +232,8 @@ public static class ReminderDigestBuilder
     {
         var daysLeft = DaysLeft(certificate, now);
         var remaining = certificate.NotAfter - now;
-        var inWindow = remaining <= TimeSpan.FromDays(settings.StartDays);
+        // Whole days, as the Dashboard shows them: a certificate showing 87 days left is in a window that starts at 87.
+        var inWindow = daysLeft <= settings.StartDays;
         DateTimeOffset? scheduled = scheduledRenewals.TryGetValue(certificate.SiteName, out var value) ? value : null;
 
         if (remaining <= TimeSpan.Zero)

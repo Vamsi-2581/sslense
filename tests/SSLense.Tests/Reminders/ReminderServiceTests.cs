@@ -21,7 +21,7 @@ public sealed class ReminderServiceTests
     public ReminderServiceTests()
     {
         _certificates = new JsonManagedCertificateStore(_files, @"C:\data\managed-certificates.json", @"C:\data\managed.lock");
-        _state = new JsonReminderStateStore(_files, @"C:\data\reminder-state.json");
+        _state = new JsonReminderStateStore(_files, @"C:\data\reminder-state.json", @"C:\data\reminder-state.lock");
         _notifier.Setup(value => value.NotifyAsync(It.IsAny<NotificationMessage>(), It.IsAny<CancellationToken>()))
             .Callback<NotificationMessage, CancellationToken>((message, _) => _sent.Add(message))
             .Returns(Task.CompletedTask);
@@ -78,6 +78,35 @@ public sealed class ReminderServiceTests
         await CreateService(renewal.Object).CheckAsync();
 
         Assert.Contains("should have renewed", Assert.Single(_sent).Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_AfterTodayWasHandled_TheNextCheckLooksAgainAndSendsNothingTwice()
+    {
+        // 09:00: nothing is due with a window of 30 days, so today is marked as handled.
+        await _certificates.UpsertAsync(Imported(daysLeft: 87));
+        var saved = new AppConfig { Reminders = _settings };
+        var config = new Mock<IConfigStore>();
+        config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => saved);
+        config.Setup(value => value.SaveAsync(It.IsAny<AppConfig>(), It.IsAny<CancellationToken>()))
+            .Callback<AppConfig, CancellationToken>((value, _) => saved = value)
+            .Returns(Task.CompletedTask);
+        var service = new ReminderService(_certificates, config.Object, Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Empty(_sent);
+
+        // Later that day the window is widened.
+        await service.SaveSettingsAsync(new ReminderConfig { StartDays = 87 });
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Single(_sent);
+
+        // Saving again the same day does not repeat today's reminder.
+        await service.SaveSettingsAsync(new ReminderConfig { StartDays = 87, RepeatDays = 2 });
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Single(_sent);
     }
 
     [Fact]
@@ -205,6 +234,74 @@ public sealed class ReminderServiceTests
         Assert.Empty(_sent);
         Assert.Null(Assert.Single(await _certificates.GetAllAsync()).LastRemindedAt);
         Assert.Null((await _state.GetAsync()).LastDigestDate);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_WhileADigestIsBeingSent_IsNotMarkedHandled_AndTheWeeklySummaryIsKept()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 20));
+        _settings = new ReminderConfig { SendAtHour = 9, WeeklySummaryDay = DayOfWeek.Tuesday };
+        var service = CreateServiceWithSavedSettings(Mock.Of<IRenewalService>());
+        _notifier.Setup(value => value.NotifyAsync(It.IsAny<NotificationMessage>(), It.IsAny<CancellationToken>()))
+            .Returns<NotificationMessage, CancellationToken>(async (message, _) =>
+            {
+                _sent.Add(message);
+                await service.SaveSettingsAsync(_settings with { StartDays = 45 });
+            });
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await service.CheckAsync();
+
+        var state = await _state.GetAsync();
+        Assert.Null(state.LastDigestDate);
+        Assert.Equal(new DateOnly(2026, 12, 1), state.LastWeeklySummaryDate);
+
+        // The next check looks again under the new settings, and neither the reminder nor the summary is repeated.
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Single(_sent);
+        Assert.Equal(new DateOnly(2026, 12, 1), (await _state.GetAsync()).LastDigestDate);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_WhileADigestIsBeingBuilt_TheNextCheckUsesTheNewSettings()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 87) with { Source = CertificateSource.Acme });
+        var renewal = new Mock<IRenewalService>();
+        var service = CreateServiceWithSavedSettings(renewal.Object);
+        var saved = false;
+        renewal.Setup(value => value.GetScheduledRenewalAsync(It.IsAny<ManagedCertificate>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                if (!saved)
+                {
+                    saved = true;
+                    await service.SaveSettingsAsync(_settings with { StartDays = 87 });
+                }
+
+                return _clock.Now.AddDays(57);
+            });
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await service.CheckAsync();
+        Assert.Empty(_sent);
+        Assert.Null((await _state.GetAsync()).LastDigestDate);
+
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Single(_sent);
+    }
+
+    /// <summary>A service whose settings are saved and read back, for tests that change them part way through a check.</summary>
+    private ReminderService CreateServiceWithSavedSettings(IRenewalService renewal)
+    {
+        var saved = new AppConfig { Reminders = _settings };
+        var config = new Mock<IConfigStore>();
+        config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => saved);
+        config.Setup(value => value.SaveAsync(It.IsAny<AppConfig>(), It.IsAny<CancellationToken>()))
+            .Callback<AppConfig, CancellationToken>((value, _) => saved = value)
+            .Returns(Task.CompletedTask);
+        return new ReminderService(_certificates, config.Object, renewal, _state, _notifier.Object, _detector.Object, _clock);
     }
 
     private ReminderService CreateService(IRenewalService? renewal = null)

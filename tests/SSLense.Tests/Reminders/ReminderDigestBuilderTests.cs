@@ -13,6 +13,8 @@ public sealed class ReminderDigestBuilderTests
 
     [Theory]
     [InlineData(45, null, false)]                // before the window
+    [InlineData(31, null, false)]                // the day before the window starts
+    [InlineData(30, null, true)]                 // shows 30 days left (30 days and an hour): the window has started
     [InlineData(29, null, true)]                 // in the window, never reminded
     [InlineData(20, 1, false)]                   // reminded yesterday, repeat every 3 days
     [InlineData(20, 3, true)]                    // three days later
