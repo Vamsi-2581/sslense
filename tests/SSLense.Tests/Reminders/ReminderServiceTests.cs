@@ -205,6 +205,35 @@ public sealed class ReminderServiceTests
     }
 
     [Fact]
+    public async Task SaveSettingsAsync_AfterTodayWasHandled_TheNextCheckLooksAgainAndSendsNothingTwice()
+    {
+        // 09:00: nothing is due with a window of 30 days, so today is marked as handled.
+        await _certificates.UpsertAsync(Imported(daysLeft: 87));
+        var saved = new AppConfig { Reminders = _settings };
+        var config = new Mock<IConfigStore>();
+        config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => saved);
+        config.Setup(value => value.SaveAsync(It.IsAny<AppConfig>(), It.IsAny<CancellationToken>()))
+            .Callback<AppConfig, CancellationToken>((value, _) => saved = value)
+            .Returns(Task.CompletedTask);
+        var service = new ReminderService(_certificates, config.Object, Mock.Of<IRenewalService>(), _state, _notifier.Object, _detector.Object, _clock);
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Empty(_sent);
+
+        // Later that day the window is widened.
+        await service.SaveSettingsAsync(new ReminderConfig { StartDays = 87 });
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Single(_sent);
+
+        // Saving again the same day does not repeat today's reminder.
+        await service.SaveSettingsAsync(new ReminderConfig { StartDays = 87, RepeatDays = 2 });
+        _clock.Now = _clock.Now.AddHours(1);
+        await service.CheckAsync();
+        Assert.Single(_sent);
+    }
+
+    [Fact]
     public async Task SaveSettingsAsync_RejectsOutOfRangeValues()
     {
         var service = CreateService();
