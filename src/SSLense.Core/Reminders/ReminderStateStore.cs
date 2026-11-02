@@ -18,7 +18,11 @@ public interface IReminderStateStore
 {
     Task<ReminderState> GetAsync(CancellationToken cancellationToken = default);
 
-    Task SaveAsync(ReminderState state, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Reads the state, applies <paramref name="change"/> and writes the result, under a lock shared by the service, the
+    /// GUI and the CLI, so one writer does not overwrite what another just recorded.
+    /// </summary>
+    Task UpdateAsync(Func<ReminderState, Task<ReminderState>> change, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Kept apart from the certificates so a service restart does not send the same day's digest twice.</summary>
@@ -31,16 +35,18 @@ internal sealed class JsonReminderStateStore : IReminderStateStore
 
     private readonly IFileSystem _fileSystem;
     private readonly string _path;
+    private readonly string _lockPath;
 
     public JsonReminderStateStore(IFileSystem fileSystem)
-        : this(fileSystem, AppPaths.ReminderStateFile)
+        : this(fileSystem, AppPaths.ReminderStateFile, AppPaths.ReminderStateLockFile)
     {
     }
 
-    internal JsonReminderStateStore(IFileSystem fileSystem, string path)
+    internal JsonReminderStateStore(IFileSystem fileSystem, string path, string lockPath)
     {
         _fileSystem = fileSystem;
         _path = path;
+        _lockPath = lockPath;
     }
 
     public async Task<ReminderState> GetAsync(CancellationToken cancellationToken = default)
@@ -65,10 +71,15 @@ internal sealed class JsonReminderStateStore : IReminderStateStore
     }
 
     // The service writes this file, and saving reminder settings clears the digest date; the atomic replace keeps a crash
-    // from leaving it half written.
-    public Task SaveAsync(ReminderState state, CancellationToken cancellationToken = default) =>
-        _fileSystem.WriteAllTextAtomicAsync(
-            _path,
-            JsonSerializer.Serialize(state with { SchemaVersion = StateSchema.ReminderState }, SerializerOptions),
-            cancellationToken);
+    // from leaving it half written, so reading needs no lock.
+    public async Task UpdateAsync(Func<ReminderState, Task<ReminderState>> change, CancellationToken cancellationToken = default)
+    {
+        await using var fileLock = await _fileSystem.AcquireExclusiveFileLockAsync(_lockPath, cancellationToken).ConfigureAwait(false);
+        var state = await change(await GetAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+        await _fileSystem.WriteAllTextAtomicAsync(
+                _path,
+                JsonSerializer.Serialize(state with { SchemaVersion = StateSchema.ReminderState }, SerializerOptions),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

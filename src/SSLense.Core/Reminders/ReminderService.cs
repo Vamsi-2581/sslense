@@ -99,11 +99,10 @@ internal sealed class ReminderService(
         var weekly = settings.WeeklySummaryDay == now.DayOfWeek && state.LastWeeklySummaryDate != today;
         var build = await BuildAsync(config, now, weekly, state, cancellationToken).ConfigureAwait(false);
         var digest = build.Digest;
-        state = state with { CheckFailures = build.CheckFailures, LastChecksDate = today };
         var results = build.Errors.Select(error => new ReminderCheckResult(error, Failed: true)).ToList();
         if (!digest.HasContent)
         {
-            await stateStore.SaveAsync(state with { LastDigestDate = today }, CancellationToken.None).ConfigureAwait(false);
+            await MarkHandledAsync(settings, today, weekly, build.CheckFailures).ConfigureAwait(false);
             results.Add(new ReminderCheckResult("No certificate needs a reminder today."));
             return results;
         }
@@ -115,21 +114,39 @@ internal sealed class ReminderService(
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            await stateStore.SaveAsync(state, CancellationToken.None).ConfigureAwait(false);
+            await stateStore.UpdateAsync(
+                    current => Task.FromResult(current with { CheckFailures = build.CheckFailures, LastChecksDate = today }),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
             results.Add(new ReminderCheckResult($"Could not send the reminder digest: {exception.Message} It will be retried at the next check.", Failed: true));
             return results;
         }
 
         await managedStore.RecordRemindersAsync(digest.ToRecords(), now, CancellationToken.None).ConfigureAwait(false);
-        await stateStore.SaveAsync(
-                state with { LastDigestDate = today, LastWeeklySummaryDate = weekly ? today : state.LastWeeklySummaryDate },
-                CancellationToken.None)
-            .ConfigureAwait(false);
+        await MarkHandledAsync(settings, today, weekly, build.CheckFailures).ConfigureAwait(false);
         results.Add(new ReminderCheckResult(
             $"Sent the reminder digest: {digest.NeedsAttention.Count} need attention, {digest.Upcoming.Count} upcoming automatic renewal(s)" +
             $"{(weekly ? ", weekly summary" : string.Empty)}."));
         return results;
     }
+
+    /// <param name="handledWith">The settings today's digest was built from.</param>
+    private Task MarkHandledAsync(ReminderConfig handledWith, DateOnly today, bool weekly, IReadOnlyDictionary<string, int> checkFailures) =>
+        stateStore.UpdateAsync(
+            async state =>
+            {
+                // Read inside the lock: settings saved while the digest was being built or sent must not be marked as
+                // handled, or they would wait until tomorrow. SaveSettingsAsync saves them before it takes this lock.
+                var current = await configStore.LoadAsync(CancellationToken.None).ConfigureAwait(false);
+                return state with
+                {
+                    LastDigestDate = current.Reminders == handledWith ? today : state.LastDigestDate,
+                    LastWeeklySummaryDate = weekly ? today : state.LastWeeklySummaryDate,
+                    CheckFailures = checkFailures,
+                    LastChecksDate = today
+                };
+            },
+            CancellationToken.None);
 
     public async Task<ReminderDigest> PreviewAsync(CancellationToken cancellationToken = default)
     {
@@ -171,11 +188,8 @@ internal sealed class ReminderService(
         // Today's digest may already have been handled under the old settings, for example with nothing due. The next
         // hourly check looks again. Nothing is sent twice: certificates reminded today wait for their repeat interval,
         // notices are sent once, and the weekly summary keeps its own date.
-        var state = await stateStore.GetAsync(cancellationToken).ConfigureAwait(false);
-        if (state.LastDigestDate is not null)
-        {
-            await stateStore.SaveAsync(state with { LastDigestDate = null }, CancellationToken.None).ConfigureAwait(false);
-        }
+        await stateStore.UpdateAsync(state => Task.FromResult(state with { LastDigestDate = null }), CancellationToken.None)
+            .ConfigureAwait(false);
     }
 
     public async Task SetCertificateRemindersAsync(
