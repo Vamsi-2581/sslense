@@ -34,7 +34,7 @@ Nothing changes on the server: these checks only report.
 - **What is reported:**
   - a served certificate that differs from the record;
   - a served certificate that has expired;
-  - no answer on port 443.
+  - no HTTPS binding for the host on port 443, or no answer from it.
 - **Order:** the check runs after the detection of renewals made outside SSLense, so an imported certificate replaced on purpose is recorded rather than reported as wrong.
 - **Honest limit:** it shows what this server serves, not necessarily what visitors receive through a CDN, reverse proxy, or load balancer. Checking through public DNS would raise false alarms for sites behind a CDN that serves its own certificate, so it is left out of this version.
 
@@ -72,5 +72,5 @@ Both follow the existing pattern: a backup before migration, and refusal of newe
 | Step | Content |
 |---|---|
 | 1 | Readiness checks: the setting, failure counts, digest lines, and tests. **Done.** |
-| 2 | Served-certificate check: the digest lines, the health entry, and tests |
+| 2 | Served-certificate check: the digest lines, the health entry, and tests. **Done.** |
 | 3 | GUI setting, CLI option, README, and release as 0.12.0 after the first feedback from the launch posts |

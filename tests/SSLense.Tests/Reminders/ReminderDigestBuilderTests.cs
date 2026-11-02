@@ -71,6 +71,21 @@ public sealed class ReminderDigestBuilderTests
     }
 
     [Fact]
+    public void ServedProblem_GetsItsOwnLine_AndTheCertificateCountsOnce()
+    {
+        var digest = ReminderDigestBuilder.Build(
+            [Imported(10)], Settings, Now, new Dictionary<string, DateTimeOffset>(), false, null,
+            new Dictionary<string, string> { ["Site"] = "shop.example.com serves a different certificate." });
+
+        Assert.Equal(
+            [ReminderItemKind.ManualRenewalDue, ReminderItemKind.ServedCertificateProblem],
+            digest.Items.Select(item => item.Kind));
+        var message = digest.ToMessage("SERVER01");
+        Assert.Equal("SSLense: 1 certificate(s) need attention on SERVER01", message.Subject);
+        Assert.Contains("a check of what this server serves found a problem", message.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FailingRenewal_TakesPriorityOverAReadinessProblem()
     {
         var failing = Automatic(25) with { LastRenewalSucceeded = false, ConsecutiveFailures = 1, LastRenewalMessage = "HTTP-01 failed" };

@@ -97,7 +97,7 @@ public sealed class RenewalReadinessCheckTests
         Assert.Contains("IIS cannot be read", Assert.Single(result.Errors), StringComparison.Ordinal);
     }
 
-    private Task<RenewalReadinessResult> Check(ManagedCertificate certificate, int renewsInDays) =>
+    private Task<ProactiveCheckResult> Check(ManagedCertificate certificate, int renewsInDays) =>
         new RenewalReadinessCheck(_preflight.Object, _lock.Object).CheckAsync(
             [certificate],
             new Dictionary<string, DateTimeOffset> { [certificate.SiteName] = Now.AddDays(renewsInDays) },

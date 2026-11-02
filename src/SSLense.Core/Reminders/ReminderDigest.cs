@@ -22,6 +22,9 @@ public enum ReminderItemKind
     /// <summary>The daily checks found a problem that is likely to make the coming automatic renewal fail.</summary>
     RenewalNotReady,
 
+    /// <summary>This server does not serve the certificate SSLense expects, or does not answer on port 443.</summary>
+    ServedCertificateProblem,
+
     /// <summary>For information: an automatic certificate entered the window and will be renewed on its own.</summary>
     UpcomingAutomaticRenewal
 }
@@ -66,7 +69,7 @@ public sealed record ReminderDigest(
         var attention = NeedsAttention;
         var upcoming = Upcoming;
         var subject = attention.Count > 0
-            ? $"SSLense: {attention.Count} certificate(s) need attention on {serverName}"
+            ? $"SSLense: {attention.Select(item => item.Certificate.SiteName).Distinct(StringComparer.OrdinalIgnoreCase).Count()} certificate(s) need attention on {serverName}"
             : upcoming.Count > 0
                 ? $"SSLense: upcoming automatic renewals on {serverName}"
                 : $"SSLense weekly summary for {serverName}: {All.Count} certificate(s), nothing needs attention";
@@ -157,6 +160,8 @@ public sealed record ReminderDigest(
             ReminderItemKind.RenewalNotReady =>
                 $"{name} ({source}): renewal is likely to fail. Renewal is due around {Date(item.ScheduledRenewal)}, and a check " +
                 $"on this server found a problem. {item.Detail}",
+            ReminderItemKind.ServedCertificateProblem =>
+                $"{name} ({source}): a check of what this server serves found a problem. {item.Detail}",
             _ =>
                 $"{name} ({source}): expires {Date(certificate.NotAfter)}; SSLense will renew it automatically around " +
                 $"{Date(item.ScheduledRenewal)}."
@@ -195,14 +200,16 @@ public static class ReminderDigestBuilder
 
     /// <param name="now">The current time in the server's local offset; days are counted in local dates.</param>
     /// <param name="scheduledRenewals">By site name: when each automatic certificate is scheduled to renew, when known.</param>
-    /// <param name="readinessProblems">By site name: what the daily checks found that should be reported.</param>
+    /// <param name="readinessProblems">By site name: what the daily readiness checks found that should be reported.</param>
+    /// <param name="servedProblems">By site name: what the daily served-certificate checks found that should be reported.</param>
     public static ReminderDigest Build(
         IReadOnlyList<ManagedCertificate> certificates,
         ReminderConfig settings,
         DateTimeOffset now,
         IReadOnlyDictionary<string, DateTimeOffset> scheduledRenewals,
         bool weeklySummary,
-        IReadOnlyDictionary<string, string>? readinessProblems = null)
+        IReadOnlyDictionary<string, string>? readinessProblems = null,
+        IReadOnlyDictionary<string, string>? servedProblems = null)
     {
         var items = new List<ReminderItem>();
         var muted = new List<ManagedCertificate>();
@@ -217,6 +224,14 @@ public static class ReminderDigestBuilder
             if (Classify(certificate, settings, now, scheduledRenewals, readinessProblems) is { } item)
             {
                 items.Add(item);
+            }
+
+            // A line of its own: a certificate can be due for renewal and also not be the one being served.
+            if (servedProblems is not null &&
+                servedProblems.TryGetValue(certificate.SiteName, out var served) &&
+                IntervalElapsed(certificate, now, RepeatInterval(certificate, settings, now)))
+            {
+                items.Add(new ReminderItem(certificate, ReminderItemKind.ServedCertificateProblem, DaysLeft(certificate, now), null, served));
             }
         }
 
@@ -254,7 +269,7 @@ public static class ReminderDigestBuilder
                 : null;
         }
 
-        var interval = remaining <= TimeSpan.FromDays(DailyFinalDays) ? 1 : settings.RepeatDays;
+        var interval = RepeatInterval(certificate, settings, now);
         if (certificate.Source == CertificateSource.Imported)
         {
             return inWindow && IntervalElapsed(certificate, now, interval)
@@ -289,6 +304,9 @@ public static class ReminderDigestBuilder
             ? new ReminderItem(certificate, ReminderItemKind.UpcomingAutomaticRenewal, daysLeft, scheduled)
             : null;
     }
+
+    private static int RepeatInterval(ManagedCertificate certificate, ReminderConfig settings, DateTimeOffset now) =>
+        certificate.NotAfter - now <= TimeSpan.FromDays(DailyFinalDays) ? 1 : settings.RepeatDays;
 
     /// <summary>Whether at least <paramref name="interval"/> local days passed since this certificate was last reminded.</summary>
     private static bool IntervalElapsed(ManagedCertificate certificate, DateTimeOffset now, int interval)

@@ -4,17 +4,6 @@ using SSLense.Core.Validation;
 
 namespace SSLense.Core.Reminders;
 
-/// <param name="Problems">By site: what failed, for certificates that were checked and did not pass.</param>
-/// <param name="Passed">Sites that were checked and passed.</param>
-/// <param name="Errors">Checks that could not run; logged, and they never stop the digest.</param>
-public sealed record RenewalReadinessResult(
-    IReadOnlyDictionary<string, string> Problems,
-    IReadOnlyList<string> Passed,
-    IReadOnlyList<string> Errors)
-{
-    public static RenewalReadinessResult None { get; } = new(new Dictionary<string, string>(), [], []);
-}
-
 /// <summary>
 /// Runs the pre-flight checks ahead of each automatic renewal, so a closed port or a removed binding is found while there
 /// is time to fix it (docs/design/proactive-checks.md, section 3). Report-only. The checks run from this server, so a
@@ -23,7 +12,7 @@ public sealed record RenewalReadinessResult(
 public interface IRenewalReadinessCheck
 {
     /// <param name="scheduledRenewals">By site: when each automatic certificate is scheduled to renew.</param>
-    Task<RenewalReadinessResult> CheckAsync(
+    Task<ProactiveCheckResult> CheckAsync(
         IReadOnlyList<ManagedCertificate> certificates,
         IReadOnlyDictionary<string, DateTimeOffset> scheduledRenewals,
         DateTimeOffset now,
@@ -37,7 +26,7 @@ internal sealed class RenewalReadinessCheck(
     /// <summary>Checks start this long before the scheduled renewal, so a certificate far from it causes no daily emails.</summary>
     internal static readonly TimeSpan Window = TimeSpan.FromDays(30);
 
-    public async Task<RenewalReadinessResult> CheckAsync(
+    public async Task<ProactiveCheckResult> CheckAsync(
         IReadOnlyList<ManagedCertificate> certificates,
         IReadOnlyDictionary<string, DateTimeOffset> scheduledRenewals,
         DateTimeOffset now,
@@ -82,6 +71,6 @@ internal sealed class RenewalReadinessCheck(
             }
         }
 
-        return new RenewalReadinessResult(problems, passed, errors);
+        return new ProactiveCheckResult(problems, passed, errors);
     }
 }

@@ -54,12 +54,15 @@ internal sealed class ReminderService(
     INotifier notifier,
     IOutsideRenewalDetector outsideRenewals,
     IRenewalReadinessCheck readinessCheck,
+    IServedCertificateCheck servedCheck,
     TimeProvider? timeProvider = null) : IReminderService
 {
     public const int MaximumSnoozeDays = 90;
 
     /// <summary>A brief outage or a site restart should not cause an email.</summary>
     private const int FailuresBeforeReporting = 2;
+    private const string ReadinessPrefix = "readiness:";
+    private const string ServedPrefix = "served:";
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -97,7 +100,7 @@ internal sealed class ReminderService(
         var build = await BuildAsync(config, now, weekly, state, cancellationToken).ConfigureAwait(false);
         var digest = build.Digest;
         state = state with { CheckFailures = build.CheckFailures, LastChecksDate = today };
-        var results = build.Readiness.Errors.Select(error => new ReminderCheckResult(error, Failed: true)).ToList();
+        var results = build.Errors.Select(error => new ReminderCheckResult(error, Failed: true)).ToList();
         if (!digest.HasContent)
         {
             await stateStore.SaveAsync(state with { LastDigestDate = today }, CancellationToken.None).ConfigureAwait(false);
@@ -194,7 +197,7 @@ internal sealed class ReminderService(
     /// The state to count check failures from, for the real digest, which reports a problem only after two daily failures
     /// in a row. Null for a preview or sample, which shows every current problem and counts nothing.
     /// </param>
-    private async Task<(ReminderDigest Digest, RenewalReadinessResult Readiness, IReadOnlyDictionary<string, int> CheckFailures)> BuildAsync(
+    private async Task<(ReminderDigest Digest, IReadOnlyList<string> Errors, IReadOnlyDictionary<string, int> CheckFailures)> BuildAsync(
         AppConfig config,
         DateTimeOffset now,
         bool weeklySummary,
@@ -219,62 +222,78 @@ internal sealed class ReminderService(
             }
         }
 
-        var readiness = config.Reminders.ProactiveChecks
-            ? await RunReadinessAsync(certificates, scheduled, now, cancellationToken).ConfigureAwait(false)
-            : RenewalReadinessResult.None;
-        var failures = countFrom is null || !config.Reminders.ProactiveChecks
-            ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            : CountFailures(countFrom, readiness, DateOnly.FromDateTime(now.DateTime));
-        var report = countFrom is null
-            ? readiness.Problems
-            : readiness.Problems
-                .Where(problem => failures.GetValueOrDefault(ReadinessKey(problem.Key)) >= FailuresBeforeReporting)
-                .ToDictionary(problem => problem.Key, problem => problem.Value, StringComparer.OrdinalIgnoreCase);
-        var digest = ReminderDigestBuilder.Build(certificates, config.Reminders, now, scheduled, weeklySummary, report);
-        return (digest, readiness, failures);
+        if (!config.Reminders.ProactiveChecks)
+        {
+            var plain = ReminderDigestBuilder.Build(certificates, config.Reminders, now, scheduled, weeklySummary);
+            return (plain, [], new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var readiness = await RunCheckAsync(
+                "renewal readiness",
+                () => readinessCheck.CheckAsync(certificates, scheduled, now, cancellationToken),
+                cancellationToken)
+            .ConfigureAwait(false);
+        var served = await RunCheckAsync(
+                "served certificate",
+                () => servedCheck.CheckAllAsync(certificates, now, cancellationToken),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var failures = new Dictionary<string, int>(countFrom?.CheckFailures ?? new Dictionary<string, int>(), StringComparer.OrdinalIgnoreCase);
+        var increment = countFrom?.LastChecksDate == DateOnly.FromDateTime(now.DateTime) ? 0 : 1;
+        CountFailures(failures, ReadinessPrefix, readiness, increment);
+        CountFailures(failures, ServedPrefix, served, increment);
+        var digest = ReminderDigestBuilder.Build(
+            certificates,
+            config.Reminders,
+            now,
+            scheduled,
+            weeklySummary,
+            ProblemsToReport(readiness, ReadinessPrefix, failures, countFrom is null),
+            ProblemsToReport(served, ServedPrefix, failures, countFrom is null));
+        return (digest, [.. readiness.Errors, .. served.Errors], countFrom is null ? new Dictionary<string, int>() : failures);
     }
 
-    private async Task<RenewalReadinessResult> RunReadinessAsync(
-        IReadOnlyList<ManagedCertificate> certificates,
-        IReadOnlyDictionary<string, DateTimeOffset> scheduled,
-        DateTimeOffset now,
+    /// <summary>Reminders matter more than the checks: when one cannot run, the digest still goes out without it.</summary>
+    private static async Task<ProactiveCheckResult> RunCheckAsync(
+        string name,
+        Func<Task<ProactiveCheckResult>> check,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await readinessCheck.CheckAsync(certificates, scheduled, now, cancellationToken).ConfigureAwait(false);
+            return await check().ConfigureAwait(false);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            // Reminders matter more than the checks: the digest still goes out without them.
-            return new RenewalReadinessResult(
-                new Dictionary<string, string>(),
-                [],
-                [$"Could not run the renewal readiness checks: {exception.Message}"]);
+            return new ProactiveCheckResult(new Dictionary<string, string>(), [], [$"Could not run the {name} checks: {exception.Message}"]);
         }
     }
 
     /// <summary>
-    /// The new consecutive-failure counts. A day counts once even when a failed send makes the digest run again that day.
-    /// A pass resets a site's count; a site that was not checked, for example because it was busy, keeps its count.
+    /// Updates the consecutive-failure counts. A day counts once even when a failed send makes the digest run again that
+    /// day. A pass resets a site's count; a site that was not checked, for example because it was busy, keeps its count.
     /// </summary>
-    private static Dictionary<string, int> CountFailures(ReminderState state, RenewalReadinessResult readiness, DateOnly today)
+    private static void CountFailures(Dictionary<string, int> counts, string prefix, ProactiveCheckResult result, int increment)
     {
-        var counts = new Dictionary<string, int>(state.CheckFailures ?? new Dictionary<string, int>(), StringComparer.OrdinalIgnoreCase);
-        foreach (var site in readiness.Passed)
+        foreach (var site in result.Passed)
         {
-            counts.Remove(ReadinessKey(site));
+            counts.Remove($"{prefix}{site}");
         }
 
-        var increment = state.LastChecksDate == today ? 0 : 1;
-        foreach (var site in readiness.Problems.Keys)
+        foreach (var site in result.Problems.Keys)
         {
-            var key = ReadinessKey(site);
+            var key = $"{prefix}{site}";
             counts[key] = Math.Max(counts.GetValueOrDefault(key) + increment, 1);
         }
-
-        return counts;
     }
 
-    private static string ReadinessKey(string siteName) => $"readiness:{siteName}";
+    private static Dictionary<string, string> ProblemsToReport(
+        ProactiveCheckResult result,
+        string prefix,
+        Dictionary<string, int> failures,
+        bool reportAll) =>
+        result.Problems
+            .Where(problem => reportAll || failures.GetValueOrDefault($"{prefix}{problem.Key}") >= FailuresBeforeReporting)
+            .ToDictionary(problem => problem.Key, problem => problem.Value, StringComparer.OrdinalIgnoreCase);
 }

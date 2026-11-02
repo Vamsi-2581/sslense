@@ -16,6 +16,7 @@ public sealed class ReminderServiceTests
     private readonly List<NotificationMessage> _sent = [];
     private readonly Mock<IOutsideRenewalDetector> _detector = new();
     private readonly Mock<IRenewalReadinessCheck> _readiness = new();
+    private readonly Mock<IServedCertificateCheck> _served = new();
     private readonly TestClock _clock = new(new DateTimeOffset(2026, 12, 1, 8, 0, 0, TimeSpan.Zero)); // a Tuesday
     private ReminderConfig _settings = new() { SendAtHour = 9 };
 
@@ -28,6 +29,7 @@ public sealed class ReminderServiceTests
             .Returns(Task.CompletedTask);
         _detector.Setup(value => value.DetectAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         NotReady();
+        Served();
     }
 
     [Fact]
@@ -47,6 +49,24 @@ public sealed class ReminderServiceTests
         var message = Assert.Single(_sent);
         Assert.Contains("renewal is likely to fail", message.Body, StringComparison.Ordinal);
         Assert.Contains("'HTTP binding: api.example.com' failed", message.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ServedProblem_IsCountedSeparatelyAndReportedOnTheSecondDay()
+    {
+        await _certificates.UpsertAsync(Imported(daysLeft: 200));
+        Served("Shop");
+        var service = CreateService();
+        _clock.Now = _clock.Now.AddHours(1);
+
+        await service.CheckAsync();
+        Assert.Empty(_sent);
+
+        _clock.Now = _clock.Now.AddDays(1);
+        await service.CheckAsync();
+
+        Assert.Contains("a check of what this server serves found a problem", Assert.Single(_sent).Body, StringComparison.Ordinal);
+        Assert.Equal(2, (await _state.GetAsync()).CheckFailures!["served:Shop"]);
     }
 
     [Fact]
@@ -315,7 +335,7 @@ public sealed class ReminderServiceTests
     {
         var config = new Mock<IConfigStore>(MockBehavior.Strict);
         config.Setup(value => value.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => new AppConfig { Reminders = _settings });
-        return new ReminderService(_certificates, config.Object, renewal ?? ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _clock);
+        return new ReminderService(_certificates, config.Object, renewal ?? ScheduledInTenDays(), _state, _notifier.Object, _detector.Object, _readiness.Object, _served.Object, _clock);
     }
 
     private IRenewalService ScheduledInTenDays()
@@ -326,14 +346,19 @@ public sealed class ReminderServiceTests
         return renewal.Object;
     }
 
-    private void NotReady(params string[] sites) => Readiness(new RenewalReadinessResult(
+    /// <param name="problemSites">Sites that do not serve the expected certificate today.</param>
+    private void Served(params string[] problemSites) =>
+        _served.Setup(value => value.CheckAllAsync(It.IsAny<IReadOnlyList<ManagedCertificate>>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProactiveCheckResult(problemSites.ToDictionary(site => site, _ => "shop.example.com serves a different certificate."), [], []));
+
+    private void NotReady(params string[] sites) => Readiness(new ProactiveCheckResult(
         sites.ToDictionary(site => site, _ => "'HTTP binding: api.example.com' failed: Add an IIS HTTP binding on port 80 for this host."),
         [],
         []));
 
-    private void Ready(params string[] sites) => Readiness(new RenewalReadinessResult(new Dictionary<string, string>(), sites, []));
+    private void Ready(params string[] sites) => Readiness(new ProactiveCheckResult(new Dictionary<string, string>(), sites, []));
 
-    private void Readiness(RenewalReadinessResult result) =>
+    private void Readiness(ProactiveCheckResult result) =>
         _readiness.Setup(value => value.CheckAsync(
                 It.IsAny<IReadOnlyList<ManagedCertificate>>(), It.IsAny<IReadOnlyDictionary<string, DateTimeOffset>>(),
                 It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
