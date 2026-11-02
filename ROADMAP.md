@@ -111,4 +111,4 @@ Ordered roughly by expected demand. Community feedback decides the order.
 
 ## 6. Sustainability
 
-SSLense is maintained voluntarily. Donations (planned through GitHub Sponsors or Open Collective) help pay for test infrastructure and code signing. Any future paid offering, such as optional services or support, would leave the open-source core intact. Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+SSLense is maintained voluntarily. Donations through [GitHub Sponsors](https://github.com/sponsors/panchalvimaldev) help pay for test infrastructure and code signing. Any future paid offering, such as optional services or support, would leave the open-source core intact. Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
