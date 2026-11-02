@@ -29,5 +29,5 @@ paste here
 ```
 
 **Diagnostic bundle**
-Run `SSLense.Cli diagnostics` (add `--redact-hosts` if your host names are private) and attach the zip.
+Run `SSLense.Cli diagnostics` (add `--redact-hosts` if your site names, host names, or folders are private) and attach the zip.
 Secrets are removed automatically, but please review the files before attaching them.

@@ -65,6 +65,39 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_RedactHosts_ReplacesSiteFoldersInJsonAndLogs()
+    {
+        var service = CreateService();
+
+        var result = await service.CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        var entries = ReadEntries(result.Path);
+        var everything = string.Join("\n", entries.Values);
+        Assert.DoesNotContain("inetpub", everything, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("folder-1", entries["iis-sites.json"], StringComparison.Ordinal);
+        Assert.Contains(@"folder-1\.well-known", entries["logs/sslense-20261028.log"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutRedaction_KeepsSiteFolders()
+    {
+        var result = await CreateService().CreateAsync(new DiagnosticBundleRequest(_output));
+
+        Assert.Contains("inetpub", ReadEntries(result.Path)["iis-sites.json"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateFolderMap_ReplacesTheLongestFolderFirst_AndSkipsABareDrive()
+    {
+        var map = DiagnosticBundleService.CreateFolderMap([@"D:\sites\shop", @"D:\sites\shop-old\web", @"D:\"]);
+
+        Assert.Equal(2, map.Count);
+        Assert.Matches(map[0].Pattern, @"D:\\sites\\shop-old\\web");
+        Assert.DoesNotMatch(map[1].Pattern, @"D:\sites\shop-old");
+        Assert.Matches(map[1].Pattern, @"D:/sites/shop");
+    }
+
+    [Fact]
     public async Task CreateAsync_FailingSection_StillWritesTheRestAndExplainsTheGap()
     {
         var iis = new Mock<IIisService>(MockBehavior.Strict);
@@ -110,6 +143,7 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
         var fileSystem = new InMemoryFileSystem();
         fileSystem.Files[Path.Combine(AppPaths.LogDirectory, "sslense-20261028.log")] = string.Join("\n",
             "[INF] Issued for acme-test.sslense.com, thumbprint 6533D7B01A1F3C4BDF85551F375A3EFC4BD45F5F",
+            @"[INF] Preparing the challenge in C:\inetpub\sslense\.well-known",
             $"[ERR] SMTP authentication failed: password={LoggedPassword}",
             $"[ERR] POST https://hooks.slack.com/services/T000/B000/{LoggedWebhookToken} returned 500",
             $"[DBG] Authorization: Bearer {LoggedBearer}",

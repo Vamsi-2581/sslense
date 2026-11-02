@@ -209,7 +209,7 @@ static RootCommand CreateRootCommand(IServiceProvider services)
     };
     var diagnosticsRedactHostsOption = new Option<bool>("--redact-hosts")
     {
-        Description = "Replace site and host names with placeholders, for posting the bundle publicly."
+        Description = "Replace site names, host names, and site folders with placeholders, for posting the bundle publicly."
     };
     var diagnosticsCommand = new Command(
         "diagnostics",
@@ -1302,8 +1302,8 @@ static async Task<int> DiagnosticsAsync(
 
         Console.WriteLine($"Diagnostic bundle created: {result.Path}");
         Console.WriteLine(redactHosts
-            ? "Site and host names were replaced with placeholders."
-            : "Site and host names are included; add --redact-hosts before posting it publicly if they are private.");
+            ? "Site names, host names, and site folders were replaced with placeholders."
+            : "Site names, host names, and site folders are included; add --redact-hosts before posting it publicly if they are private.");
         Console.WriteLine("Secrets are removed automatically, but review the files before sharing them.");
         return 0;
     }

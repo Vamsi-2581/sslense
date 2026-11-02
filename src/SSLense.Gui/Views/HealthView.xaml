@@ -72,7 +72,7 @@
                     <TextBlock Text="Diagnostic bundle" Style="{StaticResource SectionTitle}" />
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,4,0,8"
                                Text="Saves a zip to your Desktop with health results, settings, bindings, and recent logs to attach to a GitHub issue. Passwords, keys, protected values, and webhook URLs are removed automatically." />
-                    <CheckBox Content="Replace site and host names with placeholders (for public posts)"
+                    <CheckBox Content="Replace site names, host names, and site folders with placeholders (for public posts)"
                               IsChecked="{Binding RedactHosts}" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">

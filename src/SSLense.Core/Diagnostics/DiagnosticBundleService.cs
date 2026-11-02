@@ -13,7 +13,7 @@ using SSLense.Core.WindowsServices;
 
 namespace SSLense.Core.Diagnostics;
 
-/// <param name="RedactHosts">Replace site and host names with placeholders, for posting publicly.</param>
+/// <param name="RedactHosts">Replace site names, host names, and site folders with placeholders, for posting publicly.</param>
 public sealed record DiagnosticBundleRequest(string OutputPath, bool RedactHosts = false);
 
 public sealed record DiagnosticBundleResult(string Path, IReadOnlyList<string> Notes);
@@ -60,6 +60,7 @@ internal sealed class DiagnosticBundleService(
         var entries = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var notes = new List<string>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         async Task Collect(string entry, string description, Func<Task<object?>> collect)
         {
@@ -101,6 +102,10 @@ internal sealed class DiagnosticBundleService(
             {
                 names.Add(site.Name);
                 names.UnionWith(site.Bindings.Select(binding => binding.HostName).Where(host => host.Length > 0));
+                if (!string.IsNullOrWhiteSpace(site.PhysicalPath))
+                {
+                    folders.Add(site.PhysicalPath);
+                }
             }
 
             return sites;
@@ -134,7 +139,7 @@ internal sealed class DiagnosticBundleService(
             }
         }
 
-        var hostMap = request.RedactHosts ? CreateHostMap(names) : [];
+        var hostMap = request.RedactHosts ? [.. CreateFolderMap(folders), .. CreateHostMap(names)] : Array.Empty<(Regex Pattern, string Replacement)>();
         entries["README.txt"] = CreateReadme(request.RedactHosts, notes);
 
         progress?.Report(new ProgressEvent("diagnostics", "Redacting and writing the bundle."));
@@ -254,6 +259,25 @@ internal sealed class DiagnosticBundleService(
             .ToArray();
     }
 
+    /// <summary>
+    /// Site folders often name a client or project. They are replaced before the host names, which could otherwise change
+    /// part of a folder so it no longer matches. A folder may appear with single backslashes in a log and doubled in JSON.
+    /// </summary>
+    internal static IReadOnlyList<(Regex Pattern, string Replacement)> CreateFolderMap(IEnumerable<string> folders)
+    {
+        var index = 0;
+
+        // Longest first, so "D:\sites\shop-old" is replaced before "D:\sites\shop". A bare drive is too broad to replace.
+        return folders
+            .Select(folder => folder.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries))
+            .Where(segments => segments.Length > 1)
+            .OrderByDescending(segments => segments.Sum(segment => segment.Length))
+            .Select(segments => (
+                new Regex($@"(?<![A-Za-z0-9.\-_]){string.Join(@"[\\/]{1,2}", segments.Select(Regex.Escape))}(?![A-Za-z0-9\-_])", RegexOptions.IgnoreCase),
+                $"folder-{++index}"))
+            .ToArray();
+    }
+
     private static string ApplyHostMap(string text, IReadOnlyList<(Regex Pattern, string Replacement)> map) =>
         map.Aggregate(text, (current, item) => item.Pattern.Replace(current, item.Replacement));
 
@@ -270,8 +294,8 @@ internal sealed class DiagnosticBundleService(
         builder.AppendLine("removed except for Let's Encrypt and HTTP-01 challenge URLs.");
         builder.AppendLine();
         builder.AppendLine(hostsRedacted
-            ? "Site and host names were replaced with placeholders such as site-1 and host-1.example."
-            : "Site and host names are included. Create the bundle with host redaction before posting it publicly if they are private.");
+            ? "Site names, host names, and site folders were replaced with placeholders such as site-1, host-1.example, and folder-1. Other folder paths in the logs are not changed."
+            : "Site names, host names, and site folders are included. Create the bundle with host redaction before posting it publicly if they are private.");
         builder.AppendLine("Certificate thumbprints are included; they are public identifiers, not secrets.");
         builder.AppendLine();
         builder.AppendLine("Review the files before sharing them.");

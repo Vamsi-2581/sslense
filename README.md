@@ -439,7 +439,7 @@ To ask for help, create a diagnostic bundle and attach it to a GitHub issue:
 
 ```powershell
 SSLense.Cli diagnostics                  # sslense-diagnostics-<timestamp>.zip on your Desktop
-SSLense.Cli diagnostics --redact-hosts   # also replaces site and host names, for public posts
+SSLense.Cli diagnostics --redact-hosts   # also replaces site names, host names, and site folders, for public posts
 ```
 
 The bundle contains a system summary (SSLense, Windows, .NET, and IIS versions), the health check results, configuration, managed certificates, IIS sites and bindings, interrupted operations, the service heartbeat, and the three newest log files. It never contains private keys, ACME account keys, PFX files, SMTP passwords, webhook URLs, or DPAPI-protected values. Email addresses are masked, and URL paths and query strings are removed except for Let's Encrypt and HTTP-01 challenge URLs. Thumbprints are kept because they are public identifiers. Review the files before sharing them.
@@ -476,7 +476,7 @@ Review the current daily log in `C:\ProgramData\SSLense\logs` for the full excep
 - **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md). Commits are signed off under the Developer Certificate of Origin.
 - **Website:** [sslense.com](https://sslense.com) is the static site in [`site/`](site/), deployed by Cloudflare (Workers static assets, `site/wrangler.jsonc`) whenever `site/` changes; there is no build step.
 - **Security issues:** report them privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
-- **Bugs and questions:** open a GitHub issue with the output of `SSLense.Cli health` and a bundle from `SSLense.Cli diagnostics` (add `--redact-hosts` if your host names are private).
+- **Bugs and questions:** open a GitHub issue with the output of `SSLense.Cli health` and a bundle from `SSLense.Cli diagnostics` (add `--redact-hosts` if your site names, host names, or folders are private).
 
 ## License
 
