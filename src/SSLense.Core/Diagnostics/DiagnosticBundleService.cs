@@ -143,7 +143,8 @@ internal sealed class DiagnosticBundleService(
             }
         }
 
-        var hostMap = request.RedactHosts ? [.. CreateFolderMap(folders), .. CreateHostMap(names)] : Array.Empty<(Regex Pattern, string Replacement)>();
+        var folderMap = request.RedactHosts ? CreateFolderMap(folders) : [];
+        var hostMap = request.RedactHosts ? CreateHostMap(names) : [];
         entries["README.txt"] = CreateReadme(request.RedactHosts, notes);
 
         progress?.Report(new ProgressEvent("diagnostics", "Redacting and writing the bundle."));
@@ -161,8 +162,10 @@ internal sealed class DiagnosticBundleService(
             {
                 var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
                 await using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-                // Names first: masking an email address inside a folder path would stop the folder from matching.
-                await writer.WriteAsync(SecretRedactor.Redact(ApplyHostMap(content, hostMap))).ConfigureAwait(false);
+                // Folders go first, because masking an email address inside a path would stop it from matching. Site and host
+                // names go last, because a site named "Password" would otherwise hide "password=..." from the redactor.
+                var redacted = SecretRedactor.Redact(ApplyMap(content, folderMap));
+                await writer.WriteAsync(ApplyMap(redacted, hostMap)).ConfigureAwait(false);
             }
         }
 
@@ -290,7 +293,7 @@ internal sealed class DiagnosticBundleService(
         return rune.IsBmp ? Regex.Escape(value) : $@"(?:{value}|\\u{(int)value[0]:X4}\\u{(int)value[1]:X4})";
     }));
 
-    private static string ApplyHostMap(string text, IReadOnlyList<(Regex Pattern, string Replacement)> map) =>
+    private static string ApplyMap(string text, IReadOnlyList<(Regex Pattern, string Replacement)> map) =>
         map.Aggregate(text, (current, item) => item.Pattern.Replace(current, item.Replacement));
 
     private static string CreateReadme(bool hostsRedacted, IReadOnlyList<string> notes)

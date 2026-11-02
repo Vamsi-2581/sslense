@@ -113,6 +113,23 @@ public sealed class DiagnosticBundleServiceTests : IDisposable
         Assert.Contains(@"folder-1\.well-known", entries["logs/sslense-20261028.log"], StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("Password")]
+    [InlineData("Authorization")]
+    [InlineData("Bearer")]
+    public async Task CreateAsync_RedactHosts_ASiteNamedLikeASecretLabelDoesNotExposeSecrets(string siteName)
+    {
+        var iis = new Mock<IIisService>(MockBehavior.Strict);
+        iis.Setup(value => value.GetSitesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new IisSite(1, siteName, "Started", @"D:\sites\web", [])]);
+
+        var result = await CreateService(iis).CreateAsync(new DiagnosticBundleRequest(_output, RedactHosts: true));
+
+        var everything = string.Join("\n", ReadEntries(result.Path).Values);
+        Assert.DoesNotContain(LoggedPassword, everything, StringComparison.Ordinal);
+        Assert.DoesNotContain(LoggedBearer, everything, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task CreateAsync_WithoutRedaction_KeepsSiteFolders()
     {
