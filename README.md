@@ -256,6 +256,13 @@ Once a day (from 09:00 server time by default) the service sends one digest to e
 
 Automatic (Let's Encrypt) certificates also get one notice when they enter the window, saying when they will be renewed. Renewal failures are still sent immediately as they happen, even for a certificate whose reminders are off. A certificate from another provider that is replaced outside SSLense, for example through IIS Manager, is noticed within the hour and its reminders stop.
 
+Two daily checks find problems before they cause an outage. They only report, and a problem appears in the digest after two daily failures in a row:
+
+- **Renewal readiness:** in the 30 days before each Let's Encrypt renewal, the pre-flight checks run for that site. A failure means renewal is likely to fail. The checks run from the server itself, so a pass does not prove that Let's Encrypt can reach the site. The challenge-folder check briefly writes and removes one small file in the site's `.well-known\acme-challenge` folder.
+- **Served certificate:** SSLense connects to each host's port 443 binding on the server and compares what is served with what it expects. This shows what IIS serves, not necessarily what visitors receive through a CDN or proxy.
+
+Certificates with reminders off or snoozed are not checked, and neither are stopped sites (served certificate) or sites with an operation in progress. Turn the checks off under **Settings → Reminders** or with `SSLense.Cli reminders set --checks off`. **Health** shows the served-certificate result on demand, and `reminders preview` shows current problems straight away.
+
 In the app, the settings are under **Settings → Reminders** (with **Send sample digest**), the Dashboard has a **Reminders** column, and **Certificate Details** turns reminders on, snoozes them for 7 or 30 days, or turns them off until the certificate is replaced or permanently. From the CLI:
 
 ```powershell

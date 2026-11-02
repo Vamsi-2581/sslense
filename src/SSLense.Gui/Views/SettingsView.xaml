@@ -32,6 +32,8 @@
     <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"
                Text="Reminders are daily in the last 7 days whatever the repeat says. The weekly summary is sent on that day even when all is well, so silence means something is wrong."/>
     <CheckBox Content="Tell me once when a Let's Encrypt certificate is about to renew automatically" IsChecked="{Binding UpcomingRenewalNotices}" Margin="0,12,0,0"/>
+    <CheckBox Content="Check renewal readiness and served certificates daily" IsChecked="{Binding ProactiveChecks}" Margin="0,8,0,0"
+              ToolTip="Runs the pre-flight checks in the 30 days before each Let's Encrypt renewal, and compares what this server serves with what SSLense expects. Problems are reported after two daily failures in a row. The checks only report; the only thing written is one small file, removed straight away, in the site's challenge folder."/>
     <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
      <Button Content="Save reminders" Command="{Binding SaveRemindersCommand}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
      <Button Content="Send sample digest" Command="{Binding SendSampleReminderCommand}" ToolTip="Sends today's digest now, marked as a sample. Nothing is recorded, so real reminders are unchanged."/>

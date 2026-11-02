@@ -755,8 +755,10 @@ static Command CreateRemindersCommand(IServiceProvider services)
     noticesOption.AcceptOnlyFromAmong("on", "off");
     var weeklyOption = new Option<string?>("--weekly") { Description = "Weekly summary: off, or a day such as monday." };
     weeklyOption.AcceptOnlyFromAmong(["off", .. Enum.GetNames<DayOfWeek>().Select(day => day.ToLowerInvariant())]);
+    var checksOption = new Option<string?>("--checks") { Description = "Daily renewal readiness and served-certificate checks: on or off." };
+    checksOption.AcceptOnlyFromAmong("on", "off");
     var setCommand = new Command("set", "Change the reminder settings; options left out keep their value.");
-    foreach (var option in new Option[] { startOption, repeatOption, sendAtOption, noticesOption, weeklyOption })
+    foreach (var option in new Option[] { startOption, repeatOption, sendAtOption, noticesOption, weeklyOption, checksOption })
     {
         setCommand.Options.Add(option);
     }
@@ -768,6 +770,7 @@ static Command CreateRemindersCommand(IServiceProvider services)
         parseResult.GetValue(sendAtOption),
         parseResult.GetValue(noticesOption),
         parseResult.GetValue(weeklyOption),
+        parseResult.GetValue(checksOption),
         token));
     command.Subcommands.Add(setCommand);
 
@@ -812,6 +815,7 @@ static async Task<int> ShowRemindersAsync(IReminderService reminders, Cancellati
         Console.WriteLine($"Daily digest: from {settings.SendAtHour:00}:00 server time, only when something needs attention");
         Console.WriteLine($"Upcoming automatic renewal notices: {(settings.UpcomingRenewalNotices ? "on" : "off")}");
         Console.WriteLine($"Weekly summary: {settings.WeeklySummaryDay?.ToString() ?? "off"}");
+        Console.WriteLine($"Daily readiness and served-certificate checks: {(settings.ProactiveChecks ? "on" : "off")}");
         Console.WriteLine($"Last digest handled: {overview.LastDigestDate?.ToString("yyyy-MM-dd") ?? "never (the service handles it from the send time)"}");
         Console.WriteLine();
         foreach (var certificate in overview.Certificates.OrderBy(value => value.NotAfter))
@@ -842,11 +846,12 @@ static async Task<int> SetRemindersAsync(
     int? sendAt,
     string? notices,
     string? weekly,
+    string? checks,
     CancellationToken token)
 {
-    if (startDays is null && repeatDays is null && sendAt is null && notices is null && weekly is null)
+    if (startDays is null && repeatDays is null && sendAt is null && notices is null && weekly is null && checks is null)
     {
-        Console.Error.WriteLine("Error: specify at least one of --start-days, --repeat-days, --send-at, --notices, --weekly.");
+        Console.Error.WriteLine("Error: specify at least one of --start-days, --repeat-days, --send-at, --notices, --weekly, --checks.");
         return 1;
     }
 
@@ -860,6 +865,7 @@ static async Task<int> SetRemindersAsync(
                     RepeatDays = repeatDays ?? current.RepeatDays,
                     SendAtHour = sendAt ?? current.SendAtHour,
                     UpcomingRenewalNotices = notices is null ? current.UpcomingRenewalNotices : notices == "on",
+                    ProactiveChecks = checks is null ? current.ProactiveChecks : checks == "on",
                     WeeklySummaryDay = weekly is null
                         ? current.WeeklySummaryDay
                         : weekly == "off" ? null : Enum.Parse<DayOfWeek>(weekly, ignoreCase: true)

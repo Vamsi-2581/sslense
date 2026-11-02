@@ -73,4 +73,4 @@ Both follow the existing pattern: a backup before migration, and refusal of newe
 |---|---|
 | 1 | Readiness checks: the setting, failure counts, digest lines, and tests. **Done.** |
 | 2 | Served-certificate check: the digest lines, the health entry, and tests. **Done.** |
-| 3 | GUI setting, CLI option, README, and release as 0.12.0 after the first feedback from the launch posts |
+| 3 | GUI setting, CLI option, and README. **Done.** Release as 0.12.0 after the first feedback from the launch posts. |

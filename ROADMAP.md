@@ -22,6 +22,7 @@ Complete:
 - Certificates from other providers such as 123-reg (0.10): certificate requests (CSRs) whose private key is a non-exportable machine key, completion with the issued certificate and bundle, PFX import, and adoption of certificates already bound in IIS. Every install is validated first (host coverage, validity, server-authentication purpose, key match, and the full chain with its dates) and uses the same journal, HTTPS verification, and rollback as Let's Encrypt.
 - Certificate authority profiles in place of the hard-coded Let's Encrypt environment (0.10): the groundwork for other ACME CAs
 - Expiry reminders (0.11): one daily digest, sent only when a certificate needs attention, from a configurable number of days before expiry and repeating until it is renewed; a notice before each automatic renewal; per-certificate snooze, off until replaced, or off permanently; an optional weekly summary; and detection of certificates renewed outside SSLense
+- Daily report-only checks (0.12): the pre-flight checks in the 30 days before each automatic renewal, and a comparison of the certificate this server serves with the one SSLense expects, with problems reported in the digest after two daily failures in a row
 - Cross-process per-site locking, durable operation journals, and non-fatal startup recovery
 - Health check (CLI and GUI) and redacted diagnostic bundles for support
 - Versioned state schemas with backup before migration and safe refusal of newer schemas
@@ -55,14 +56,13 @@ In priority order. Feedback from real users can change the order.
 
 1. **DNS-01 validation and wildcard certificates.** The largest remaining gap: sites that cannot open port 80, internal servers, and wildcard names all need it. A versioned DNS-provider plugin interface; Cloudflare first, then Azure DNS, AWS Route 53, and others; manual and script-based methods as a fallback; CNAME delegation; propagation checks from several resolvers; least-privilege, DPAPI-protected provider credentials.
 2. **More ACME certificate authorities.** The certificate authority profiles from 0.10 are in place. Adding ACME CAs with External Account Binding (ZeroSSL, Google Trust Services, SSL.com, internal ACME servers), a CA choice in the Issue wizard, and Pebble-based tests in CI (steps 4 and 5 of [docs/design/certificate-sources.md](docs/design/certificate-sources.md)). SSLense never fails over to another CA without explicit configuration.
-3. **Renewal readiness checks.** Run the pre-flight checks for every automatic certificate on a schedule, well before its renewal date, and report a problem in the daily digest while there is still time to fix it. A changed DNS record or a closed port 80 should be found weeks early, not on the day of renewal.
-4. **Served-certificate monitoring.** Connect to each site on a schedule and compare what is really served with what SSLense expects: the certificate, its expiry, and a complete chain. Report differences in the digest. Also allow adding host names that are not on this server, such as load balancers and appliances, so one place reminds about every certificate.
-5. **Script hooks.** Optional PowerShell commands before and after a renewal or install, with the certificate's details passed in, for restarting a service or copying a certificate elsewhere.
-6. **Certificate export and shared stores.** IIS Central Certificate Store, Azure Key Vault, and PFX or PEM export. Export needs an exportable key, so it stays off by default and is an explicit choice per certificate.
-7. **Key options for ACME certificates.** A choice of RSA or ECDSA (issuance currently uses ECDSA P-256), and optional private-key reuse for sites that pin keys.
-8. **HTTP-to-HTTPS redirect helper** using an IIS URL Rewrite rule, with a check that it does not block validation.
-9. **Bulk operations.** Adopt every unmanaged certificate at once, and issue for many sites from a CSV file.
-10. **New version notice.** Tell the administrator when a newer release is available, with a setting to turn the check off. Never install anything automatically.
+3. **Certificates on other machines.** Add host names that are not on this server, such as load balancers and appliances, to the daily served-certificate check, so one place reminds about every certificate.
+4. **Script hooks.** Optional PowerShell commands before and after a renewal or install, with the certificate's details passed in, for restarting a service or copying a certificate elsewhere.
+5. **Certificate export and shared stores.** IIS Central Certificate Store, Azure Key Vault, and PFX or PEM export. Export needs an exportable key, so it stays off by default and is an explicit choice per certificate.
+6. **Key options for ACME certificates.** A choice of RSA or ECDSA (issuance currently uses ECDSA P-256), and optional private-key reuse for sites that pin keys.
+7. **HTTP-to-HTTPS redirect helper** using an IIS URL Rewrite rule, with a check that it does not block validation.
+8. **Bulk operations.** Adopt every unmanaged certificate at once, and issue for many sites from a CSV file.
+9. **New version notice.** Tell the administrator when a newer release is available, with a setting to turn the check off. Never install anything automatically.
 
 ## 5. Before 1.0
 
