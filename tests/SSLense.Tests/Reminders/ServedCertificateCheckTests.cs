@@ -67,6 +67,19 @@ public sealed class ServedCertificateCheckTests
     }
 
     [Fact]
+    public async Task ExpectedCertificateThatHasExpired_IsReported()
+    {
+        Site(Binding());
+        Serves(Expected);
+        var expired = Now.AddDays(-2);
+
+        var result = await Check(Certificate() with { NotAfter = expired });
+
+        Assert.Empty(result.Passed);
+        Assert.Contains($"serves the expected certificate, but it expired on {expired:yyyy-MM-dd}", result.Problems["Shop"], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NoAnswer_OrNoBinding_IsReported()
     {
         Site(Binding());

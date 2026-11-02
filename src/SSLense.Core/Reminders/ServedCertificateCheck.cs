@@ -130,7 +130,10 @@ internal sealed class ServedCertificateCheck(
         var expected = Normalize(certificate.Thumbprint);
         if (string.Equals(served, expected, StringComparison.Ordinal))
         {
-            return null;
+            // The probe accepts invalid certificates so it can read them, so a match alone does not mean all is well.
+            return certificate.NotAfter <= DateTimeOffset.UtcNow
+                ? $"{host} serves the expected certificate, but it expired on {certificate.NotAfter:yyyy-MM-dd}."
+                : null;
         }
 
         var installed = await certificateStore.FindByThumbprintAsync(served, cancellationToken).ConfigureAwait(false);
