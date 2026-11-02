@@ -15,7 +15,8 @@
 - Renewal: follows ACME Renewal Information (ARI), with a lifetime-relative fallback
 - Notifications: email through any SMTP server or relay, Microsoft Teams, Slack, Discord, Telegram, ntfy, a heartbeat ping, and the Windows Event Log
 - Certificates from other providers (such as 123-reg, Sectigo, DigiCert): certificate requests with a non-exportable key, installing the issued certificate with HTTPS verification and rollback, PFX import, and adopting certificates already bound in IIS; SSLense reminds you to order their renewals
-- Reminders: one daily digest, only when a certificate needs attention, from a configurable number of days before expiry (default 30) until it is renewed; snooze or turn off per certificate; optional weekly summary
+- Reminders: one daily digest, only when a certificate needs attention, from a configurable number of days before expiry (default 30) until it is renewed; snooze or turn off per certificate; optional weekly summary; an option to keep reminding about automatic certificates until they renew; shows when the next email is due and logs why each certificate was included or skipped
+- Daily checks: report-only pre-flight checks in the 30 days before each automatic renewal, and a comparison of the certificate served on port 443 from the server with the one SSLense expects; problems are reported after two failures in a row
 - License: Apache License 2.0
-- Status: pre-release (0.11.x); releases are not yet code-signed
+- Status: pre-release (0.12.x); releases are not yet code-signed
 - Support: GitHub issues; security reports through GitHub private vulnerability reporting
