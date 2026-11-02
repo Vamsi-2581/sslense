@@ -49,11 +49,26 @@ References:
 - [Let's Encrypt: Decreasing Certificate Lifetimes to 45 Days](https://letsencrypt.org/2025/12/02/from-90-to-45)
 - [Let's Encrypt: ACME Renewal Information Published as RFC 9773](https://letsencrypt.org/2025/09/16/ari-rfc)
 
-## 4. Before 1.0
+## 4. Next development
+
+In priority order. Feedback from real users can change the order.
+
+1. **DNS-01 validation and wildcard certificates.** The largest remaining gap: sites that cannot open port 80, internal servers, and wildcard names all need it. A versioned DNS-provider plugin interface; Cloudflare first, then Azure DNS, AWS Route 53, and others; manual and script-based methods as a fallback; CNAME delegation; propagation checks from several resolvers; least-privilege, DPAPI-protected provider credentials.
+2. **More ACME certificate authorities.** The certificate authority profiles from 0.10 are in place. Adding ACME CAs with External Account Binding (ZeroSSL, Google Trust Services, SSL.com, internal ACME servers), a CA choice in the Issue wizard, and Pebble-based tests in CI (steps 4 and 5 of [docs/design/certificate-sources.md](docs/design/certificate-sources.md)). SSLense never fails over to another CA without explicit configuration.
+3. **Renewal readiness checks.** Run the pre-flight checks for every automatic certificate on a schedule, well before its renewal date, and report a problem in the daily digest while there is still time to fix it. A changed DNS record or a closed port 80 should be found weeks early, not on the day of renewal.
+4. **Served-certificate monitoring.** Connect to each site on a schedule and compare what is really served with what SSLense expects: the certificate, its expiry, and a complete chain. Report differences in the digest. Also allow adding host names that are not on this server, such as load balancers and appliances, so one place reminds about every certificate.
+5. **Script hooks.** Optional PowerShell commands before and after a renewal or install, with the certificate's details passed in, for restarting a service or copying a certificate elsewhere.
+6. **Certificate export and shared stores.** IIS Central Certificate Store, Azure Key Vault, and PFX or PEM export. Export needs an exportable key, so it stays off by default and is an explicit choice per certificate.
+7. **Key options for ACME certificates.** A choice of RSA or ECDSA (issuance currently uses ECDSA P-256), and optional private-key reuse for sites that pin keys.
+8. **HTTP-to-HTTPS redirect helper** using an IIS URL Rewrite rule, with a check that it does not block validation.
+9. **Bulk operations.** Adopt every unmanaged certificate at once, and issue for many sites from a CSV file.
+10. **New version notice.** Tell the administrator when a newer release is available, with a setting to turn the check off. Never install anything automatically.
+
+## 5. Before 1.0
 
 These keep users' sites safe and make SSLense supportable without paid support. Each must be done before a 1.0 release.
 
-### 4.1 Remaining safety work
+### 5.1 Remaining safety work
 
 - Send the ARI `replaces` field on renewal orders (Certes does not expose it yet).
 - ~~Journal challenge files so an interrupted validation is cleaned up on recovery.~~ Done October 28, 2026.
@@ -61,7 +76,7 @@ These keep users' sites safe and make SSLense supportable without paid support. 
 - Configurable maintenance windows that can never let a certificate expire.
 - Recovery procedures for a compromised ACME account or private key.
 
-### 4.2 Diagnostics and health check
+### 5.2 Diagnostics and health check
 
 Done (October 28, 2026): `SSLense.Cli health` and the GUI Health page; a redacted diagnostic bundle (`SSLense.Cli diagnostics`, optional host redaction) with tests that scan it for seeded secrets; a service heartbeat recording each cycle; and a GitHub bug-report template that asks for both.
 
@@ -70,7 +85,7 @@ Remaining:
 - Stable, searchable error codes.
 - ~~Show the health summary on the Dashboard.~~ Done October 28, 2026: a banner appears when the quick local checks find a problem.
 
-### 4.3 Distribution
+### 5.3 Distribution
 
 - ~~Release builds from GitHub Actions with SHA-256 checksums attached to each GitHub Release.~~ Done October 28, 2026 (`.github/workflows/release.yml`); first used by the v0.9.10 tag.
 - Authenticode signing of executables and the MSI, for example through the free [SignPath Foundation](https://signpath.org/) program for open-source projects. Unsigned MSIs trigger Windows SmartScreen warnings.
@@ -78,7 +93,7 @@ Remaining:
 - A [winget](https://learn.microsoft.com/windows/package-manager/) package.
 - Install, upgrade, repair, and uninstall verified on each supported Windows Server version.
 
-### 4.4 Quality and compatibility
+### 5.4 Quality and compatibility
 
 - A published support matrix of Windows Server and IIS versions, backed by repeatable tests on real IIS virtual machines.
 - HTTP-01 tested through direct public IPs, NAT, reverse proxies, and Cloudflare Tunnel.
@@ -87,7 +102,7 @@ Remaining:
 - Outbound proxies, restricted firewalls, TLS inspection, and clock skew.
 - Accessibility: keyboard navigation, high contrast, and scalable text.
 
-### 4.5 Project health
+### 5.5 Project health
 
 - A documented threat model, updated with each major architecture change.
 - Dependency and vulnerability scanning in CI, and a software bill of materials for each release.
@@ -95,20 +110,21 @@ Remaining:
 - Release notes, known issues, and an upgrade compatibility table.
 - Documentation: a quick start, firewall/DNS/proxy requirements, troubleshooting runbooks, and migration guides from manual IIS certificates and other ACME clients.
 
-## 5. After 1.0
+## 6. After 1.0
 
 Ordered roughly by expected demand. Community feedback decides the order.
 
-- **DNS-01 and wildcard certificates:** a versioned DNS-provider plugin interface; Cloudflare first, then Azure DNS, AWS Route 53, and others; generic script hooks; CNAME delegation; propagation checks from several resolvers; least-privilege, DPAPI-protected provider credentials.
 - **Several certificates per site:** move locks, journals, and CLI/GUI selection from site name to the certificate ID every record already has.
 - **Existing-certificate discovery:** adopting a certificate already bound in IIS was added in 0.10. Remaining: find expired, duplicate, self-signed, and staging certificates in `LocalMachine\My` that no binding uses, and suggest clean-up.
-- **More certificate authorities:** the certificate authority profiles from 0.10 are in place. Remaining: adding ACME CAs with External Account Binding (ZeroSSL, Google Trust Services, SSL.com, internal ACME servers), a CA choice in the Issue wizard, and Pebble-based tests in CI (steps 4 and 5 of [docs/design/certificate-sources.md](docs/design/certificate-sources.md)). SSLense never fails over to another CA without explicit configuration.
+- **Certificate history and one-click rollback:** a timeline for each certificate (issued, renewed, replaced, failed) and a way to go back to the previous certificate while it is still valid.
+- **Web farms and load-balanced sites:** HTTP-01 validation across several servers (shared storage, FTP, SFTP, or WebDAV) and keeping the certificate in step on every server.
+- **More validation methods:** TLS-ALPN-01, self-hosted HTTP validation for servers whose sites cannot serve the challenge, and newer DNS methods such as dns-persist-01 as certificate authorities adopt them.
+- **ACME profiles and IP address certificates,** including shorter-lived certificates, as certificate authorities offer them.
 - **Automation:** JSON output for every CLI command, documented exit codes, a PowerShell module, and configuration import/export.
 - **More notification channels:** signed webhook payloads, and email through the Microsoft Graph API for Microsoft 365 tenants that disable SMTP. (Teams, Slack, Discord, Telegram, ntfy, a heartbeat, the Event Log, and email for any SMTP setup were added October 28, 2026.)
-- **HTTP-to-HTTPS redirect helper** using an IIS URL Rewrite rule.
-- **Other deployment targets:** HTTP.sys, Kestrel, Remote Desktop Services, SQL Server, and Exchange, each with install, verify, rollback, and remove operations.
-- **Multi-server management:** a possible later project, built so each server's renewal keeps working when any central component is unavailable.
+- **Other deployment targets:** HTTP.sys, Kestrel, Remote Desktop Services, SQL Server, Exchange, Apache, nginx, Tomcat, and Azure App Service, each with install, verify, rollback, and remove operations.
+- **Multi-server management:** a possible later project with role-based access, built so each server's renewal keeps working when any central component is unavailable.
 
-## 6. Sustainability
+## 7. Sustainability
 
 SSLense is maintained voluntarily. Donations through [GitHub Sponsors](https://github.com/sponsors/panchalvimaldev) help pay for test infrastructure and code signing. Any future paid offering, such as optional services or support, would leave the open-source core intact. Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
