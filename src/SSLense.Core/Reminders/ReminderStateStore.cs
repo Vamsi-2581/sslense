@@ -60,7 +60,8 @@ internal sealed class JsonReminderStateStore : IReminderStateStore
         }
     }
 
-    // Only the service writes this file; the atomic replace keeps a crash from leaving it half written.
+    // The service writes this file, and saving reminder settings clears the digest date; the atomic replace keeps a crash
+    // from leaving it half written.
     public Task SaveAsync(ReminderState state, CancellationToken cancellationToken = default) =>
         _fileSystem.WriteAllTextAtomicAsync(
             _path,

@@ -152,6 +152,15 @@ internal sealed class ReminderService(
         settings.Validate();
         var config = await configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         await configStore.SaveAsync(config with { Reminders = settings }, cancellationToken).ConfigureAwait(false);
+
+        // Today's digest may already have been handled under the old settings, for example with nothing due. The next
+        // hourly check looks again. Nothing is sent twice: certificates reminded today wait for their repeat interval,
+        // notices are sent once, and the weekly summary keeps its own date.
+        var state = await stateStore.GetAsync(cancellationToken).ConfigureAwait(false);
+        if (state.LastDigestDate is not null)
+        {
+            await stateStore.SaveAsync(state with { LastDigestDate = null }, CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     public async Task SetCertificateRemindersAsync(
